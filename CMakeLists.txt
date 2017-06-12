@@ -6,6 +6,13 @@
 #
 # ----------------------------------------------------------------------------
 
+# Disable in-source builds to prevent source tree corruption.
+if(" ${CMAKE_SOURCE_DIR}" STREQUAL " ${CMAKE_BINARY_DIR}")
+  message(FATAL_ERROR "
+FATAL: In-source builds are not allowed.
+       You should create separate directory for build files.
+")
+endif()
 
 
 include(cmake/OpenCVMinDepVersions.cmake)
@@ -299,6 +306,7 @@ OCV_OPTION(ANDROID_EXAMPLES_WITH_LIBS "Build binaries of Android examples with n
 OCV_OPTION(ENABLE_IMPL_COLLECTION     "Collect implementation data on function call"             OFF )
 OCV_OPTION(ENABLE_INSTRUMENTATION     "Instrument functions to collect calls trace and performance" OFF )
 OCV_OPTION(ENABLE_GNU_STL_DEBUG       "Enable GNU STL Debug mode (defines _GLIBCXX_DEBUG)"       OFF IF ((NOT CMAKE_VERSION VERSION_LESS "2.8.11") AND CMAKE_COMPILER_IS_GNUCXX) )
+OCV_OPTION(ENABLE_BUILD_HARDENING     "Enable hardening of the resulting binaries (against security attacks, detects memory corruption, etc)" OFF)
 OCV_OPTION(GENERATE_ABI_DESCRIPTOR    "Generate XML file for abi_compliance_checker tool" OFF IF UNIX)
 OCV_OPTION(CV_ENABLE_INTRINSICS       "Use intrinsic-based optimized code" ON )
 OCV_OPTION(CV_DISABLE_OPTIMIZATION    "Disable explicit optimized code (dispatched code/intrinsics/loop unrolling/etc)" OFF )
@@ -694,7 +702,11 @@ if(HAVE_CUDA)
     set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CUDA_cufft_LIBRARY})
   endif()
   foreach(p ${CUDA_LIBS_PATH})
-    set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CMAKE_LIBRARY_PATH_FLAG}${p})
+    if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja|JOM")
+      set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CMAKE_LIBRARY_PATH_FLAG}"${p}")
+    else()
+      set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} ${CMAKE_LIBRARY_PATH_FLAG}${p})
+    endif()
   endforeach()
 endif()
 # ----------------------------------------------------------------------------
@@ -1396,13 +1408,6 @@ status("-----------------------------------------------------------------")
 status("")
 
 ocv_finalize_status()
-
-# ----------------------------------------------------------------------------
-# Warn in the case of in-source build
-# ----------------------------------------------------------------------------
-if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
-  message(WARNING "The source directory is the same as binary directory. \"make clean\" may damage the source tree")
-endif()
 
 # ----------------------------------------------------------------------------
 # CPack stuff
