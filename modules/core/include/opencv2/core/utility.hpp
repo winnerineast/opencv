@@ -56,6 +56,10 @@
 #include "opencv2/core.hpp"
 #include <ostream>
 
+#ifdef CV_CXX11
+#include <functional>
+#endif
+
 namespace cv
 {
 
@@ -196,13 +200,13 @@ be called outside of parallel region.
 
 OpenCV will try to run it's functions with specified threads number, but some behaviour differs from
 framework:
--   `TBB` – User-defined parallel constructions will run with the same threads number, if
+-   `TBB` - User-defined parallel constructions will run with the same threads number, if
     another does not specified. If later on user creates own scheduler, OpenCV will use it.
--   `OpenMP` – No special defined behaviour.
--   `Concurrency` – If threads == 1, OpenCV will disable threading optimizations and run it's
+-   `OpenMP` - No special defined behaviour.
+-   `Concurrency` - If threads == 1, OpenCV will disable threading optimizations and run it's
     functions sequentially.
--   `GCD` – Supports only values \<= 0.
--   `C=` – No special defined behaviour.
+-   `GCD` - Supports only values \<= 0.
+-   `C=` - No special defined behaviour.
 @param nthreads Number of threads used by OpenCV.
 @sa getNumThreads, getThreadNum
  */
@@ -213,13 +217,13 @@ CV_EXPORTS_W void setNumThreads(int nthreads);
 Always returns 1 if OpenCV is built without threading support.
 
 The exact meaning of return value depends on the threading framework used by OpenCV library:
-- `TBB` – The number of threads, that OpenCV will try to use for parallel regions. If there is
+- `TBB` - The number of threads, that OpenCV will try to use for parallel regions. If there is
   any tbb::thread_scheduler_init in user code conflicting with OpenCV, then function returns
   default number of threads used by TBB library.
-- `OpenMP` – An upper bound on the number of threads that could be used to form a new team.
-- `Concurrency` – The number of threads, that OpenCV will try to use for parallel regions.
-- `GCD` – Unsupported; returns the GCD thread pool limit (512) for compatibility.
-- `C=` – The number of threads, that OpenCV will try to use for parallel regions, if before
+- `OpenMP` - An upper bound on the number of threads that could be used to form a new team.
+- `Concurrency` - The number of threads, that OpenCV will try to use for parallel regions.
+- `GCD` - Unsupported; returns the GCD thread pool limit (512) for compatibility.
+- `C=` - The number of threads, that OpenCV will try to use for parallel regions, if before
   called setNumThreads with threads \> 0, otherwise returns the number of logical CPUs,
   available for the process.
 @sa setNumThreads, getThreadNum
@@ -230,12 +234,12 @@ CV_EXPORTS_W int getNumThreads();
 returns 0 if called outside of parallel region.
 
 The exact meaning of return value depends on the threading framework used by OpenCV library:
-- `TBB` – Unsupported with current 4.1 TBB release. Maybe will be supported in future.
-- `OpenMP` – The thread number, within the current team, of the calling thread.
-- `Concurrency` – An ID for the virtual processor that the current context is executing on (0
+- `TBB` - Unsupported with current 4.1 TBB release. Maybe will be supported in future.
+- `OpenMP` - The thread number, within the current team, of the calling thread.
+- `Concurrency` - An ID for the virtual processor that the current context is executing on (0
   for master thread and unique number for others, but not necessary 1,2,3,...).
-- `GCD` – System calling thread's ID. Never returns 0 inside parallel region.
-- `C=` – The index of the current parallel task.
+- `GCD` - System calling thread's ID. Never returns 0 inside parallel region.
+- `C=` - The index of the current parallel task.
 @sa setNumThreads, getNumThreads
  */
 CV_EXPORTS_W int getThreadNum();
@@ -440,6 +444,23 @@ static inline size_t alignSize(size_t sz, int n)
     return (sz + n-1) & -n;
 }
 
+/** @brief Integer division with result round up.
+
+Use this function instead of `ceil((float)a / b)` expressions.
+
+@sa alignSize
+*/
+static inline int divUp(int a, unsigned int b)
+{
+    CV_DbgAssert(a >= 0);
+    return (a + b - 1) / b;
+}
+/** @overload */
+static inline size_t divUp(size_t a, unsigned int b)
+{
+    return (a + b - 1) / b;
+}
+
 /** @brief Enables or disables the optimized code.
 
 The function can be used to dynamically turn on and off optimized code (code that uses SSE2, AVX,
@@ -477,6 +498,28 @@ public:
 /** @brief Parallel data processor
 */
 CV_EXPORTS void parallel_for_(const Range& range, const ParallelLoopBody& body, double nstripes=-1.);
+
+#ifdef CV_CXX11
+class ParallelLoopBodyLambdaWrapper : public ParallelLoopBody
+{
+private:
+    std::function<void(const Range&)> m_functor;
+public:
+    ParallelLoopBodyLambdaWrapper(std::function<void(const Range&)> functor) :
+        m_functor(functor)
+    { }
+
+    virtual void operator() (const cv::Range& range) const
+    {
+        m_functor(range);
+    }
+};
+
+inline void parallel_for_(const Range& range, std::function<void(const Range&)> functor, double nstripes=-1.)
+{
+    parallel_for_(range, ParallelLoopBodyLambdaWrapper(functor), nstripes);
+}
+#endif
 
 /////////////////////////////// forEach method of cv::Mat ////////////////////////////
 template<typename _Tp, typename Functor> inline
@@ -641,6 +684,7 @@ public:
     inline TLSData()        {}
     inline ~TLSData()       { release();            } // Release key and delete associated data
     inline T* get() const   { return (T*)getData(); } // Get data associated with key
+    inline T& getRef() const { T* ptr = (T*)getData(); CV_Assert(ptr); return *ptr; } // Get data associated with key
 
     // Get data from all threads
     inline void gather(std::vector<T*> &data) const
@@ -995,7 +1039,6 @@ template<typename _Tp, size_t fixed_size> inline
 AutoBuffer<_Tp, fixed_size>::operator const _Tp* () const
 { return ptr; }
 
-#ifndef OPENCV_NOSTL
 template<> inline std::string CommandLineParser::get<std::string>(int index, bool space_delete) const
 {
     return get<String>(index, space_delete);
@@ -1004,7 +1047,6 @@ template<> inline std::string CommandLineParser::get<std::string>(const String& 
 {
     return get<String>(name, space_delete);
 }
-#endif // OPENCV_NOSTL
 
 //! @endcond
 
@@ -1167,6 +1209,12 @@ CV_EXPORTS void       setFlags(FLAGS modeFlags);
 static inline void    setFlags(int modeFlags) { setFlags((FLAGS)modeFlags); }
 CV_EXPORTS FLAGS      getFlags();
 }
+
+namespace utils {
+
+CV_EXPORTS int getThreadID();
+
+} // namespace
 
 } //namespace cv
 

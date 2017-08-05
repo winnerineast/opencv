@@ -462,6 +462,11 @@ public:
      */
     static String getDefaultObjectName(const String& filename);
 
+    /** @brief Returns the current format.
+     * @returns The current format, see FileStorage::Mode
+     */
+    CV_WRAP int getFormat() const;
+
     Ptr<CvFileStorage> fs; //!< the underlying C FileStorage structure
     String elname; //!< the currently written element
     std::vector<char> structs; //!< the stack of written structures
@@ -474,7 +479,7 @@ template<> CV_EXPORTS void DefaultDeleter<CvFileStorage>::operator ()(CvFileStor
 
 The node is used to store each and every element of the file storage opened for reading. When
 XML/YAML file is read, it is first parsed and stored in the memory as a hierarchical collection of
-nodes. Each node can be a “leaf” that is contain a single number or a string, or be a collection of
+nodes. Each node can be a "leaf" that is contain a single number or a string, or be a collection of
 other nodes. There can be named collections (mappings) where each element has a name and it is
 accessed by a name, and ordered collections (sequences) where elements do not have names but rather
 accessed by index. Type of the file node can be determined using FileNode::type method.
@@ -570,9 +575,7 @@ public:
     operator double() const;
     //! returns the node content as text string
     operator String() const;
-#ifndef OPENCV_NOSTL
     operator std::string() const;
-#endif
 
     //! returns pointer to the underlying file node
     CvFileNode* operator *();
@@ -714,6 +717,7 @@ CV_EXPORTS void read(const FileNode& node, int& value, int default_value);
 CV_EXPORTS void read(const FileNode& node, float& value, float default_value);
 CV_EXPORTS void read(const FileNode& node, double& value, double default_value);
 CV_EXPORTS void read(const FileNode& node, String& value, const String& default_value);
+CV_EXPORTS void read(const FileNode& node, std::string& value, const std::string& default_value);
 CV_EXPORTS void read(const FileNode& node, Mat& mat, const Mat& default_mat = Mat() );
 CV_EXPORTS void read(const FileNode& node, SparseMat& mat, const SparseMat& default_mat = SparseMat() );
 CV_EXPORTS void read(const FileNode& node, std::vector<KeyPoint>& keypoints);

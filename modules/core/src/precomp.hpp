@@ -148,10 +148,6 @@ BinaryFunc getCopyMaskFunc(size_t esz);
 /* maximal average node_count/hash_size ratio beyond which hash table is resized */
 #define  CV_SPARSE_HASH_RATIO    3
 
-#if defined WIN32 || defined _WIN32
-void deleteThreadAllocData();
-#endif
-
 inline Size getContinuousSize_( int flags, int cols, int rows, int widthScale )
 {
     int64 sz = (int64)cols * rows * widthScale;
@@ -288,7 +284,7 @@ struct CoreTLSData
 TLSData<CoreTLSData>& getCoreTlsData();
 
 #if defined(BUILD_SHARED_LIBS)
-#if defined WIN32 || defined _WIN32 || defined WINCE
+#if defined _WIN32 || defined WINCE
 #define CL_RUNTIME_EXPORT __declspec(dllexport)
 #elif defined __GNUC__ && __GNUC__ >= 4
 #define CL_RUNTIME_EXPORT __attribute__ ((visibility ("default")))
@@ -298,6 +294,12 @@ TLSData<CoreTLSData>& getCoreTlsData();
 #else
 #define CL_RUNTIME_EXPORT
 #endif
+
+namespace utils {
+bool getConfigurationParameterBool(const char* name, bool defaultValue);
+size_t getConfigurationParameterSizeT(const char* name, size_t defaultValue);
+cv::String getConfigurationParameterString(const char* name, const char* defaultValue);
+}
 
 extern bool __termination; // skip some cleanups, because process is terminating
                            // (for example, if ExitProcess() was already called)
