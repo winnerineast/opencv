@@ -62,8 +62,11 @@ void Tracker::setFirstFrame(const Mat frame, vector<Point2f> bb, string title, S
 
 Mat Tracker::process(const Mat frame, Stats& stats)
 {
+    TickMeter tm;
     vector<KeyPoint> kp;
     Mat desc;
+
+    tm.start();
     detector->detectAndCompute(frame, noArray(), kp, desc);
     stats.keypoints = (int)kp.size();
 
@@ -85,6 +88,8 @@ Mat Tracker::process(const Mat frame, Stats& stats)
         homography = findHomography(Points(matched1), Points(matched2),
                                     RANSAC, ransac_thresh, inlier_mask);
     }
+    tm.stop();
+    stats.fps = 1. / tm.getTimeSec();
 
     if(matched1.size() < 4 || homography.empty()) {
         Mat res;
@@ -155,7 +160,7 @@ int main(int argc, char **argv)
     Mat frame;
     video_in >> frame;
     namedWindow(video_name, WINDOW_NORMAL);
-    cv::resizeWindow(video_name, frame.cols, frame.rows);
+    cv::resizeWindow(video_name, frame.size());
 
     cout << "Please select a bounding box, and press any key to continue." << endl;
     vector<Point2f> bb;
