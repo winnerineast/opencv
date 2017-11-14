@@ -45,6 +45,7 @@
 #include <float.h>
 #include <string>
 #include <caffe.pb.h>
+#include "../nms.inl.hpp"
 
 namespace cv
 {
@@ -60,6 +61,8 @@ static inline bool SortScorePairDescend(const std::pair<float, T>& pair1,
 {
     return pair1.first > pair2.first;
 }
+
+static inline float caffe_box_overlap(const caffe::NormalizedBBox& a, const caffe::NormalizedBBox& b);
 
 } // namespace
 
@@ -81,6 +84,8 @@ public:
 
     float _nmsThreshold;
     int _topK;
+    // Whenever predicted bounding boxes are respresented in YXHW instead of XYWH layout.
+    bool _locPredTransposed;
 
     enum { _numAxes = 4 };
     static const std::string _layerName;
@@ -148,6 +153,7 @@ public:
         _keepTopK = getParameter<int>(params, "keep_top_k");
         _confidenceThreshold = getParameter<float>(params, "confidence_threshold", 0, false, -FLT_MAX);
         _topK = getParameter<int>(params, "top_k", 0, false, -1);
+        _locPredTransposed = getParameter<bool>(params, "loc_pred_transposed", 0, false, false);
 
         getCodeType(params);
 
@@ -188,10 +194,18 @@ public:
         return false;
     }
 
-    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+#ifdef HAVE_OPENCL
+    bool forward_ocl(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr)
     {
-        CV_TRACE_FUNCTION();
-        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+        std::vector<Mat> inpvec;
+        std::vector<Mat> outputs;
+
+        inputs_arr.getMatVector(inpvec);
+        outputs_arr.getMatVector(outputs);
+
+        std::vector<Mat*> inputs(inpvec.size());
+        for (size_t i = 0; i < inpvec.size(); i++)
+            inputs[i] = &inpvec[i];
 
         std::vector<LabelBBox> allDecodedBBoxes;
         std::vector<std::vector<std::vector<float> > > allConfidenceScores;
@@ -209,7 +223,7 @@ public:
             // Retrieve all location predictions
             std::vector<LabelBBox> allLocationPredictions;
             GetLocPredictions(locationData, num, numPriors, _numLocClasses,
-                              _shareLocation, allLocationPredictions);
+                              _shareLocation, _locPredTransposed, allLocationPredictions);
 
             // Retrieve all confidences
             GetConfidenceScores(confidenceData, num, numPriors, _numClasses, allConfidenceScores);
@@ -234,6 +248,90 @@ public:
 
         if (numKept == 0)
         {
+            // Set confidences to zeros.
+            Range ranges[] = {Range::all(), Range::all(), Range::all(), Range(2, 3)};
+            outputs[0](ranges).setTo(0);
+            return true;
+        }
+        int outputShape[] = {1, 1, (int)numKept, 7};
+        Mat mat(4, outputShape, CV_32F);
+        float* outputsData = mat.ptr<float>();
+
+        size_t count = 0;
+        for (int i = 0; i < num; ++i)
+        {
+            count += outputDetections_(i, &outputsData[count * 7],
+                                       allDecodedBBoxes[i], allConfidenceScores[i],
+                                       allIndices[i]);
+        }
+        UMat& output = outputs_arr.getUMatRef(0);
+        output = mat.getUMat(ACCESS_READ);
+        CV_Assert(count == numKept);
+        return true;
+    }
+#endif
+
+    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr)
+    {
+        CV_TRACE_FUNCTION();
+        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+
+        CV_OCL_RUN((preferableTarget == DNN_TARGET_OPENCL) &&
+                   OCL_PERFORMANCE_CHECK(ocl::Device::getDefault().isIntel()),
+                   forward_ocl(inputs_arr, outputs_arr, internals_arr))
+
+        Layer::forward_fallback(inputs_arr, outputs_arr, internals_arr);
+    }
+
+    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+    {
+        CV_TRACE_FUNCTION();
+        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+
+        std::vector<LabelBBox> allDecodedBBoxes;
+        std::vector<std::vector<std::vector<float> > > allConfidenceScores;
+
+        int num = inputs[0]->size[0];
+
+        // extract predictions from input layers
+        {
+            int numPriors = inputs[2]->size[2] / 4;
+
+            const float* locationData = inputs[0]->ptr<float>();
+            const float* confidenceData = inputs[1]->ptr<float>();
+            const float* priorData = inputs[2]->ptr<float>();
+
+            // Retrieve all location predictions
+            std::vector<LabelBBox> allLocationPredictions;
+            GetLocPredictions(locationData, num, numPriors, _numLocClasses,
+                              _shareLocation, _locPredTransposed, allLocationPredictions);
+
+            // Retrieve all confidences
+            GetConfidenceScores(confidenceData, num, numPriors, _numClasses, allConfidenceScores);
+
+            // Retrieve all prior bboxes
+            std::vector<caffe::NormalizedBBox> priorBBoxes;
+            std::vector<std::vector<float> > priorVariances;
+            GetPriorBBoxes(priorData, numPriors, priorBBoxes, priorVariances);
+
+            // Decode all loc predictions to bboxes
+            DecodeBBoxesAll(allLocationPredictions, priorBBoxes, priorVariances, num,
+                            _shareLocation, _numLocClasses, _backgroundLabelId,
+                            _codeType, _varianceEncodedInTarget, false, allDecodedBBoxes);
+        }
+
+        size_t numKept = 0;
+        std::vector<std::map<int, std::vector<int> > > allIndices;
+        for (int i = 0; i < num; ++i)
+        {
+            numKept += processDetections_(allDecodedBBoxes[i], allConfidenceScores[i], allIndices);
+        }
+
+        if (numKept == 0)
+        {
+            // Set confidences to zeros.
+            Range ranges[] = {Range::all(), Range::all(), Range::all(), Range(2, 3)};
+            outputs[0](ranges).setTo(0);
             return;
         }
         int outputShape[] = {1, 1, (int)numKept, 7};
@@ -305,7 +403,8 @@ public:
             LabelBBox::const_iterator label_bboxes = decodeBBoxes.find(label);
             if (label_bboxes == decodeBBoxes.end())
                 CV_ErrorNoReturn_(cv::Error::StsError, ("Could not find location predictions for label %d", label));
-            ApplyNMSFast(label_bboxes->second, scores, _confidenceThreshold, _nmsThreshold, 1.0, _topK, indices[c]);
+            NMSFast_(label_bboxes->second, scores, _confidenceThreshold, _nmsThreshold, 1.0, _topK,
+                indices[c], util::caffe_box_overlap);
             numDetections += indices[c].size();
         }
         if (_keepTopK > -1 && numDetections > (size_t)_keepTopK)
@@ -540,11 +639,14 @@ public:
     //    num_loc_classes: number of location classes. It is 1 if share_location is
     //      true; and is equal to number of classes needed to predict otherwise.
     //    share_location: if true, all classes share the same location prediction.
+    //    loc_pred_transposed: if true, represent four bounding box values as
+    //                         [y,x,height,width] or [x,y,width,height] otherwise.
     //    loc_preds: stores the location prediction, where each item contains
     //      location prediction for an image.
     static void GetLocPredictions(const float* locData, const int num,
                            const int numPredsPerClass, const int numLocClasses,
-                           const bool shareLocation, std::vector<LabelBBox>& locPreds)
+                           const bool shareLocation, const bool locPredTransposed,
+                           std::vector<LabelBBox>& locPreds)
     {
         locPreds.clear();
         if (shareLocation)
@@ -566,10 +668,20 @@ public:
                         labelBBox[label].resize(numPredsPerClass);
                     }
                     caffe::NormalizedBBox& bbox = labelBBox[label][p];
-                    bbox.set_xmin(locData[startIdx + c * 4]);
-                    bbox.set_ymin(locData[startIdx + c * 4 + 1]);
-                    bbox.set_xmax(locData[startIdx + c * 4 + 2]);
-                    bbox.set_ymax(locData[startIdx + c * 4 + 3]);
+                    if (locPredTransposed)
+                    {
+                        bbox.set_ymin(locData[startIdx + c * 4]);
+                        bbox.set_xmin(locData[startIdx + c * 4 + 1]);
+                        bbox.set_ymax(locData[startIdx + c * 4 + 2]);
+                        bbox.set_xmax(locData[startIdx + c * 4 + 3]);
+                    }
+                    else
+                    {
+                        bbox.set_xmin(locData[startIdx + c * 4]);
+                        bbox.set_ymin(locData[startIdx + c * 4 + 1]);
+                        bbox.set_xmax(locData[startIdx + c * 4 + 2]);
+                        bbox.set_ymax(locData[startIdx + c * 4 + 3]);
+                    }
                 }
             }
         }
@@ -600,75 +712,6 @@ public:
                     classLabelScores[p] = confData[p * numClasses + c];
                 }
             }
-        }
-    }
-
-    // Do non maximum suppression given bboxes and scores.
-    // Inspired by Piotr Dollar's NMS implementation in EdgeBox.
-    // https://goo.gl/jV3JYS
-    //    bboxes: a set of bounding boxes.
-    //    scores: a set of corresponding confidences.
-    //    score_threshold: a threshold used to filter detection results.
-    //    nms_threshold: a threshold used in non maximum suppression.
-    //    top_k: if not -1, keep at most top_k picked indices.
-    //    indices: the kept indices of bboxes after nms.
-    static void ApplyNMSFast(const std::vector<caffe::NormalizedBBox>& bboxes,
-          const std::vector<float>& scores, const float score_threshold,
-          const float nms_threshold, const float eta, const int top_k,
-          std::vector<int>& indices)
-    {
-        CV_Assert(bboxes.size() == scores.size());
-
-        // Get top_k scores (with corresponding indices).
-        std::vector<std::pair<float, int> > score_index_vec;
-        GetMaxScoreIndex(scores, score_threshold, top_k, score_index_vec);
-
-        // Do nms.
-        float adaptive_threshold = nms_threshold;
-        indices.clear();
-        while (score_index_vec.size() != 0) {
-            const int idx = score_index_vec.front().second;
-            bool keep = true;
-            for (int k = 0; k < (int)indices.size() && keep; ++k) {
-                const int kept_idx = indices[k];
-                float overlap = JaccardOverlap<true>(bboxes[idx], bboxes[kept_idx]);
-                keep = overlap <= adaptive_threshold;
-            }
-            if (keep)
-                indices.push_back(idx);
-            score_index_vec.erase(score_index_vec.begin());
-            if (keep && eta < 1 && adaptive_threshold > 0.5) {
-              adaptive_threshold *= eta;
-            }
-        }
-    }
-
-    // Get max scores with corresponding indices.
-    //    scores: a set of scores.
-    //    threshold: only consider scores higher than the threshold.
-    //    top_k: if -1, keep all; otherwise, keep at most top_k.
-    //    score_index_vec: store the sorted (score, index) pair.
-    static void GetMaxScoreIndex(const std::vector<float>& scores, const float threshold, const int top_k,
-                          std::vector<std::pair<float, int> >& score_index_vec)
-    {
-        CV_DbgAssert(score_index_vec.empty());
-        // Generate index score pairs.
-        for (size_t i = 0; i < scores.size(); ++i)
-        {
-            if (scores[i] > threshold)
-            {
-                score_index_vec.push_back(std::make_pair(scores[i], i));
-            }
-        }
-
-        // Sort the score pair according to the scores in descending order
-        std::stable_sort(score_index_vec.begin(), score_index_vec.end(),
-                         util::SortScorePairDescend<int>);
-
-        // Keep top_k scores if needed.
-        if (top_k > -1 && top_k < (int)score_index_vec.size())
-        {
-            score_index_vec.resize(top_k);
         }
     }
 
@@ -716,6 +759,11 @@ public:
         }
     }
 };
+
+float util::caffe_box_overlap(const caffe::NormalizedBBox& a, const caffe::NormalizedBBox& b)
+{
+    return DetectionOutputLayerImpl::JaccardOverlap<true>(a, b);
+}
 
 const std::string DetectionOutputLayerImpl::_layerName = std::string("DetectionOutput");
 

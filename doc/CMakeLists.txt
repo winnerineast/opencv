@@ -33,9 +33,11 @@ endif(HAVE_DOC_GENERATOR)
 
 if(BUILD_DOCS AND DOXYGEN_FOUND)
   # not documented modules list
-  list(APPEND blacklist "ts" "java" "python2" "python3" "js" "world" "contrib_world")
+  list(APPEND blacklist "ts" "java" "python2" "python3" "js" "world")
   unset(CMAKE_DOXYGEN_TUTORIAL_CONTRIB_ROOT)
   unset(CMAKE_DOXYGEN_TUTORIAL_JS_ROOT)
+
+  set(OPENCV_MATHJAX_RELPATH "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0" CACHE STRING "URI to a MathJax installation")
 
   # gathering headers
   set(paths_include)

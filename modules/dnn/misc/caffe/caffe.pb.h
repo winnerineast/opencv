@@ -1537,6 +1537,13 @@ class PriorBoxParameter : public ::google::protobuf::Message /* @@protoc_inserti
   float offset() const;
   void set_offset(float value);
 
+  // optional bool additional_y_offset = 14 [default = false];
+  bool has_additional_y_offset() const;
+  void clear_additional_y_offset();
+  static const int kAdditionalYOffsetFieldNumber = 14;
+  bool additional_y_offset() const;
+  void set_additional_y_offset(bool value);
+
   // @@protoc_insertion_point(class_scope:caffe.PriorBoxParameter)
  private:
   inline void set_has_min_size();
@@ -1561,6 +1568,8 @@ class PriorBoxParameter : public ::google::protobuf::Message /* @@protoc_inserti
   inline void clear_has_step_w();
   inline void set_has_offset();
   inline void clear_has_offset();
+  inline void set_has_additional_y_offset();
+  inline void clear_has_additional_y_offset();
 
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
   ::google::protobuf::internal::HasBits<1> _has_bits_;
@@ -1575,6 +1584,7 @@ class PriorBoxParameter : public ::google::protobuf::Message /* @@protoc_inserti
   float step_;
   float step_h_;
   float step_w_;
+  bool additional_y_offset_;
   bool flip_;
   bool clip_;
   float offset_;
@@ -9025,6 +9035,13 @@ class PoolingParameter : public ::google::protobuf::Message /* @@protoc_insertio
   bool global_pooling() const;
   void set_global_pooling(bool value);
 
+  // optional bool ceil_mode = 13 [default = true];
+  bool has_ceil_mode() const;
+  void clear_ceil_mode();
+  static const int kCeilModeFieldNumber = 13;
+  bool ceil_mode() const;
+  void set_ceil_mode(bool value);
+
   // @@protoc_insertion_point(class_scope:caffe.PoolingParameter)
  private:
   inline void set_has_pool();
@@ -9051,6 +9068,8 @@ class PoolingParameter : public ::google::protobuf::Message /* @@protoc_insertio
   inline void clear_has_engine();
   inline void set_has_global_pooling();
   inline void clear_has_global_pooling();
+  inline void set_has_ceil_mode();
+  inline void clear_has_ceil_mode();
 
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
   ::google::protobuf::internal::HasBits<1> _has_bits_;
@@ -9067,6 +9086,7 @@ class PoolingParameter : public ::google::protobuf::Message /* @@protoc_insertio
   int engine_;
   bool global_pooling_;
   ::google::protobuf::uint32 stride_;
+  bool ceil_mode_;
   friend void  protobuf_InitDefaults_caffe_2eproto_impl();
   friend void  protobuf_AddDesc_caffe_2eproto_impl();
   friend void protobuf_AssignDesc_caffe_2eproto();
@@ -13633,6 +13653,30 @@ inline void PriorBoxParameter::set_offset(float value) {
   set_has_offset();
   offset_ = value;
   // @@protoc_insertion_point(field_set:caffe.PriorBoxParameter.offset)
+}
+
+// optional bool additional_y_offset = 14 [default = false];
+inline bool PriorBoxParameter::has_additional_y_offset() const {
+  return (_has_bits_[0] & 0x00002000u) != 0;
+}
+inline void PriorBoxParameter::set_has_additional_y_offset() {
+  _has_bits_[0] |= 0x00002000u;
+}
+inline void PriorBoxParameter::clear_has_additional_y_offset() {
+  _has_bits_[0] &= ~0x00002000u;
+}
+inline void PriorBoxParameter::clear_additional_y_offset() {
+  additional_y_offset_ = false;
+  clear_has_additional_y_offset();
+}
+inline bool PriorBoxParameter::additional_y_offset() const {
+  // @@protoc_insertion_point(field_get:caffe.PriorBoxParameter.additional_y_offset)
+  return additional_y_offset_;
+}
+inline void PriorBoxParameter::set_additional_y_offset(bool value) {
+  set_has_additional_y_offset();
+  additional_y_offset_ = value;
+  // @@protoc_insertion_point(field_set:caffe.PriorBoxParameter.additional_y_offset)
 }
 
 inline const PriorBoxParameter* PriorBoxParameter::internal_default_instance() {
@@ -23508,6 +23552,30 @@ inline void PoolingParameter::set_global_pooling(bool value) {
   set_has_global_pooling();
   global_pooling_ = value;
   // @@protoc_insertion_point(field_set:caffe.PoolingParameter.global_pooling)
+}
+
+// optional bool ceil_mode = 13 [default = true];
+inline bool PoolingParameter::has_ceil_mode() const {
+  return (_has_bits_[0] & 0x00001000u) != 0;
+}
+inline void PoolingParameter::set_has_ceil_mode() {
+  _has_bits_[0] |= 0x00001000u;
+}
+inline void PoolingParameter::clear_has_ceil_mode() {
+  _has_bits_[0] &= ~0x00001000u;
+}
+inline void PoolingParameter::clear_ceil_mode() {
+  ceil_mode_ = true;
+  clear_has_ceil_mode();
+}
+inline bool PoolingParameter::ceil_mode() const {
+  // @@protoc_insertion_point(field_get:caffe.PoolingParameter.ceil_mode)
+  return ceil_mode_;
+}
+inline void PoolingParameter::set_ceil_mode(bool value) {
+  set_has_ceil_mode();
+  ceil_mode_ = value;
+  // @@protoc_insertion_point(field_set:caffe.PoolingParameter.ceil_mode)
 }
 
 inline const PoolingParameter* PoolingParameter::internal_default_instance() {

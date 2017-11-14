@@ -139,6 +139,35 @@ TEST(Reproducibility_SSD, Accuracy)
     normAssert(ref, out);
 }
 
+TEST(Reproducibility_MobileNet_SSD, Accuracy)
+{
+    const string proto = findDataFile("dnn/MobileNetSSD_deploy.prototxt", false);
+    const string model = findDataFile("dnn/MobileNetSSD_deploy.caffemodel", false);
+    Net net = readNetFromCaffe(proto, model);
+
+    Mat sample = imread(_tf("street.png"));
+
+    Mat inp = blobFromImage(sample, 1.0f / 127.5, Size(300, 300), Scalar(127.5, 127.5, 127.5), false);
+    net.setInput(inp);
+    Mat out = net.forward();
+
+    Mat ref = blobFromNPY(_tf("mobilenet_ssd_caffe_out.npy"));
+    normAssert(ref, out);
+
+    // Check that detections aren't preserved.
+    inp.setTo(0.0f);
+    net.setInput(inp);
+    out = net.forward();
+
+    const int numDetections = out.size[2];
+    ASSERT_NE(numDetections, 0);
+    for (int i = 0; i < numDetections; ++i)
+    {
+        float confidence = out.ptr<float>(0, 0, i)[2];
+        ASSERT_EQ(confidence, 0);
+    }
+}
+
 TEST(Reproducibility_ResNet50, Accuracy)
 {
     Net net = readNetFromCaffe(findDataFile("dnn/ResNet-50-deploy.prototxt", false),
@@ -209,6 +238,46 @@ TEST(Reproducibility_GoogLeNet_fp16, Accuracy)
 
     Mat ref = blobFromNPY(_tf("googlenet_prob.npy"));
     normAssert(out, ref, "", l1, lInf);
+}
+
+// https://github.com/richzhang/colorization
+TEST(Reproducibility_Colorization, Accuracy)
+{
+    const float l1 = 1e-5;
+    const float lInf = 3e-3;
+
+    Mat inp = blobFromNPY(_tf("colorization_inp.npy"));
+    Mat ref = blobFromNPY(_tf("colorization_out.npy"));
+    Mat kernel = blobFromNPY(_tf("colorization_pts_in_hull.npy"));
+
+    const string proto = findDataFile("dnn/colorization_deploy_v2.prototxt", false);
+    const string model = findDataFile("dnn/colorization_release_v2.caffemodel", false);
+    Net net = readNetFromCaffe(proto, model);
+
+    net.getLayer(net.getLayerId("class8_ab"))->blobs.push_back(kernel);
+    net.getLayer(net.getLayerId("conv8_313_rh"))->blobs.push_back(Mat(1, 313, CV_32F, 2.606));
+
+    net.setInput(inp);
+    Mat out = net.forward();
+
+    normAssert(out, ref, "", l1, lInf);
+}
+
+TEST(Reproducibility_DenseNet_121, Accuracy)
+{
+    const string proto = findDataFile("dnn/DenseNet_121.prototxt", false);
+    const string model = findDataFile("dnn/DenseNet_121.caffemodel", false);
+
+    Mat inp = imread(_tf("dog416.png"));
+    inp = blobFromImage(inp, 1.0 / 255, Size(224, 224));
+    Mat ref = blobFromNPY(_tf("densenet_121_output.npy"));
+
+    Net net = readNetFromCaffe(proto, model);
+
+    net.setInput(inp);
+    Mat out = net.forward();
+
+    normAssert(out, ref);
 }
 
 }

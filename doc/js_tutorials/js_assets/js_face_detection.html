@@ -19,14 +19,24 @@
 <p class="err" id="errorMessage"></p>
 </div>
 <div>
-    <div class="inputoutput">
-        <canvas id="canvasInput"></canvas>
-        <div class="caption">canvasInput <input type="file" id="fileInput" name="file" accept="image/*" /></div>
-    </div>
-    <div class="inputoutput">
-        <canvas id="canvasOutput"></canvas>
-        <div class="caption">canvasOutput</div>
-    </div>
+    <table cellpadding="0" cellspacing="0" width="0" border="0">
+    <tr>
+        <td>
+            <canvas id="canvasInput"></canvas>
+        </td>
+        <td>
+            <canvas id="canvasOutput"></canvas>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <div class="caption">canvasInput <input type="file" id="fileInput" name="file" accept="image/*" /></div>
+        </td>
+        <td>
+            <div class="caption">canvasOutput</div>
+        </td>
+    </tr>
+    </table>
 </div>
 <script src="utils.js" type="text/javascript"></script>
 <script id="codeSnippet" type="text/code-snippet">
@@ -55,7 +65,7 @@ for (let i = 0; i < faces.size(); ++i) {
     for (let j = 0; j < eyes.size(); ++j) {
         let point1 = new cv.Point(eyes.get(j).x, eyes.get(j).y);
         let point2 = new cv.Point(eyes.get(j).x + eyes.get(j).width,
-                                  eyes.get(j).y + eyes.get(i).height);
+                                  eyes.get(j).y + eyes.get(j).height);
         cv.rectangle(roiSrc, point1, point2, [0, 0, 255, 255]);
     }
     roiGray.delete(); roiSrc.delete();

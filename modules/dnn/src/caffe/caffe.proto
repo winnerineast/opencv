@@ -145,6 +145,8 @@ message PriorBoxParameter {
   optional float step_w = 12;
   // Offset to the top left corner of each cell.
   optional float offset = 13 [default = 0.5];
+  // If true, two additional boxes for each center will be generated. Their centers will be shifted by y coordinate.
+  optional bool additional_y_offset = 14 [default = false];
 }
 
 // Message that store parameters used by DetectionOutputLayer
@@ -1091,6 +1093,9 @@ message PoolingParameter {
   // If global_pooling then it will pool over the size of the bottom by doing
   // kernel_h = bottom->height and kernel_w = bottom->width
   optional bool global_pooling = 12 [default = false];
+  // Specify floor/ceil mode
+  // source: https://github.com/BVLC/caffe/pull/3057
+  optional bool ceil_mode = 13 [default = true];
 }
 
 message PowerParameter {
