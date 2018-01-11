@@ -107,8 +107,6 @@ void testLayerUsingCaffeModels(String basename, int targetId = DNN_TARGET_CPU,
     String inpfile = (useCommonInputBlob) ? _tf("blob.npy") : _tf(basename + ".input.npy");
     String outfile = _tf(basename + ".npy");
 
-    cv::setNumThreads(cv::getNumberOfCPUs());
-
     Net net = readNetFromCaffe(prototxt, (useCaffeModel) ? caffemodel : String());
     ASSERT_FALSE(net.empty());
 
@@ -314,11 +312,17 @@ TEST(Layer_Test_Fused_Concat, Accuracy)
     //
 
     testLayerUsingCaffeModels("layer_concat_optim", DNN_TARGET_CPU, true, false);
+    testLayerUsingCaffeModels("layer_concat_shared_input", DNN_TARGET_CPU, true, false);
 }
 
 TEST(Layer_Test_Eltwise, Accuracy)
 {
     testLayerUsingCaffeModels("layer_eltwise");
+}
+
+OCL_TEST(Layer_Test_Eltwise, Accuracy)
+{
+    testLayerUsingCaffeModels("layer_eltwise", DNN_TARGET_OPENCL);
 }
 
 TEST(Layer_Test_PReLU, Accuracy)
@@ -536,8 +540,6 @@ void testLayerUsingDarknetModels(String basename, bool useDarknetModel = false, 
     String inpfile = (useCommonInputBlob) ? _tf("blob.npy") : _tf(basename + ".input.npy");
     String outfile = _tf(basename + ".npy");
 
-    cv::setNumThreads(cv::getNumberOfCPUs());
-
     Net net = readNetFromDarknet(cfg, (useDarknetModel) ? weights : String());
     ASSERT_FALSE(net.empty());
 
@@ -579,6 +581,32 @@ TEST(Layer_Test_ROIPooling, Accuracy)
 TEST(Layer_Test_FasterRCNN_Proposal, Accuracy)
 {
     Net net = readNetFromCaffe(_tf("net_faster_rcnn_proposal.prototxt"));
+
+    Mat scores = blobFromNPY(_tf("net_faster_rcnn_proposal.scores.npy"));
+    Mat deltas = blobFromNPY(_tf("net_faster_rcnn_proposal.deltas.npy"));
+    Mat imInfo = (Mat_<float>(1, 3) << 600, 800, 1.6f);
+    Mat ref = blobFromNPY(_tf("net_faster_rcnn_proposal.npy"));
+
+    net.setInput(scores, "rpn_cls_prob_reshape");
+    net.setInput(deltas, "rpn_bbox_pred");
+    net.setInput(imInfo, "im_info");
+
+    Mat out = net.forward();
+
+    const int numDets = ref.size[0];
+    EXPECT_LE(numDets, out.size[0]);
+    normAssert(out.rowRange(0, numDets), ref);
+
+    if (numDets < out.size[0])
+        EXPECT_EQ(countNonZero(out.rowRange(numDets, out.size[0])), 0);
+}
+
+OCL_TEST(Layer_Test_FasterRCNN_Proposal, Accuracy)
+{
+    Net net = readNetFromCaffe(_tf("net_faster_rcnn_proposal.prototxt"));
+
+    net.setPreferableBackend(DNN_BACKEND_DEFAULT);
+    net.setPreferableTarget(DNN_TARGET_OPENCL);
 
     Mat scores = blobFromNPY(_tf("net_faster_rcnn_proposal.scores.npy"));
     Mat deltas = blobFromNPY(_tf("net_faster_rcnn_proposal.deltas.npy"));
