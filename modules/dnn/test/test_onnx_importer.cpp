@@ -72,6 +72,7 @@ TEST_P(Test_ONNX_layers, Deconvolution)
 {
     testONNXModels("deconvolution");
     testONNXModels("two_deconvolution");
+    testONNXModels("deconvolution_group");
 }
 
 TEST_P(Test_ONNX_layers, Dropout)
@@ -140,6 +141,11 @@ TEST_P(Test_ONNX_layers, Padding)
     testONNXModels("padding");
 }
 
+TEST_P(Test_ONNX_layers, Resize)
+{
+    testONNXModels("resize_nearest");
+}
+
 TEST_P(Test_ONNX_layers, MultyInputs)
 {
     const String model =  _tf("models/multy_inputs.onnx");
@@ -167,6 +173,11 @@ TEST_P(Test_ONNX_layers, DynamicReshape)
     if (backend == DNN_BACKEND_INFERENCE_ENGINE && (target == DNN_TARGET_OPENCL || target == DNN_TARGET_OPENCL_FP16))
         throw SkipTestException("");
     testONNXModels("dynamic_reshape");
+}
+
+TEST_P(Test_ONNX_layers, Reshape)
+{
+    testONNXModels("unsqueeze");
 }
 
 INSTANTIATE_TEST_CASE_P(/*nothing*/, Test_ONNX_layers, dnnBackendsAndTargets());
@@ -351,6 +362,10 @@ TEST_P(Test_ONNX_nets, LResNet100E_IR)
         l1 = 0.009;
         lInf = 0.035;
     }
+    else if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_CPU) {
+        l1 = 4.5e-5;
+        lInf = 1.9e-4;
+    }
     testONNXModels("LResNet100E_IR", pb, l1, lInf);
 }
 
@@ -365,6 +380,10 @@ TEST_P(Test_ONNX_nets, Emotion_ferplus)
     {
         l1 = 0.021;
         lInf = 0.034;
+    }
+    else if (backend == DNN_BACKEND_INFERENCE_ENGINE && (target == DNN_TARGET_CPU || target == DNN_TARGET_OPENCL)) {
+        l1 = 2.4e-4;
+        lInf = 6e-4;
     }
     testONNXModels("emotion_ferplus", pb, l1, lInf);
 }
@@ -387,9 +406,9 @@ TEST_P(Test_ONNX_nets, DenseNet121)
 
 TEST_P(Test_ONNX_nets, Inception_v1)
 {
-#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_RELEASE == 2018050000
+#if defined(INF_ENGINE_RELEASE) && INF_ENGINE_RELEASE >= 2018050000
     if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD)
-        throw SkipTestException("");
+        throw SkipTestException("Test is disabled for OpenVINO 2018R5");
 #endif
     testONNXModels("inception_v1", pb);
 }

@@ -251,8 +251,8 @@ OCV_OPTION(WITH_NVCUVID "Include NVidia Video Decoding library support" WITH_CUD
 OCV_OPTION(WITH_EIGEN "Include Eigen2/Eigen3 support" (NOT CV_DISABLE_OPTIMIZATION)
   VISIBLE_IF NOT WINRT AND NOT CMAKE_CROSSCOMPILING
   VERIFY HAVE_EIGEN)
-OCV_OPTION(WITH_FFMPEG "Include FFMPEG support" ON
-  VISIBLE_IF NOT ANDROID AND NOT IOS AND NOT WINRT
+OCV_OPTION(WITH_FFMPEG "Include FFMPEG support" (NOT ANDROID)
+  VISIBLE_IF NOT IOS AND NOT WINRT
   VERIFY HAVE_FFMPEG)
 OCV_OPTION(WITH_GSTREAMER "Include Gstreamer support" ON
   VISIBLE_IF NOT ANDROID AND NOT IOS AND NOT WINRT
@@ -410,6 +410,9 @@ OCV_OPTION(WITH_IMGCODEC_PFM "Include PFM formats support" ON
 OCV_OPTION(WITH_QUIRC "Include library QR-code decoding" ON
   VISIBLE_IF TRUE
   VERIFY HAVE_QUIRC)
+OCV_OPTION(WITH_ANDROID_MEDIANDK "Use Android Media NDK for Video I/O (Android)" (ANDROID_NATIVE_API_LEVEL GREATER 20)
+  VISIBLE_IF ANDROID
+  VERIFY HAVE_ANDROID_MEDIANDK)
 
 # OpenCV build components
 # ===================================================
@@ -577,7 +580,7 @@ else()
     # Note: layout differs from OpenCV 3.4
     include(GNUInstallDirs)
     ocv_update(OPENCV_INCLUDE_INSTALL_PATH       "${CMAKE_INSTALL_INCLUDEDIR}/opencv4")
-    ocv_update(OPENCV_LIB_INSTALL_PATH           "${CMAKE_INSTALL_LIBDIR}${LIB_SUFFIX}")
+    ocv_update(OPENCV_LIB_INSTALL_PATH           "${CMAKE_INSTALL_LIBDIR}")
     ocv_update(OPENCV_CONFIG_INSTALL_PATH        "${OPENCV_LIB_INSTALL_PATH}/cmake/opencv4")
     ocv_update(OPENCV_3P_LIB_INSTALL_PATH        "${OPENCV_LIB_INSTALL_PATH}/opencv4/3rdparty")
     ocv_update(OPENCV_SAMPLES_SRC_INSTALL_PATH   "${CMAKE_INSTALL_DATAROOTDIR}/opencv4/samples")
@@ -712,7 +715,7 @@ if(UNIX)
     CHECK_INCLUDE_FILE(pthread.h HAVE_PTHREAD)
     if(ANDROID)
       set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} dl m log)
-    elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD|NetBSD|DragonFly|OpenBSD|Haiku")
+    elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD|NetBSD|DragonFly|OpenBSD|Haiku")
       set(OPENCV_LINKER_LIBS ${OPENCV_LINKER_LIBS} m pthread)
     elseif(EMSCRIPTEN)
       # no need to link to system libs with emscripten
