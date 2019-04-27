@@ -140,9 +140,10 @@ Mat getMatFromTensor(opencv_onnx::TensorProto& tensor_proto)
     return blob;
 }
 
-void runLayer(Ptr<Layer> layer, const std::vector<Mat>& inputs,
+void runLayer(LayerParams& params, const std::vector<Mat>& inputs,
               std::vector<Mat>& outputs)
 {
+    Ptr<Layer> layer = LayerFactory::createLayerInstance(params.type, params);
     std::vector<MatShape> inpShapes(inputs.size());
     int ddepth = CV_32F;
     for (size_t i = 0; i < inputs.size(); ++i)
@@ -591,6 +592,37 @@ void ONNXImporter::populateNet(Net dstNet)
             }
             layerParams.set("num_output", layerParams.blobs[0].size[1] * layerParams.get<int>("group", 1));
             layerParams.set("bias_term", node_proto.input_size() == 3);
+
+            if (layerParams.has("output_shape"))
+            {
+                const DictValue& outShape = layerParams.get("output_shape");
+
+                if (outShape.size() != 4)
+                    CV_Error(Error::StsNotImplemented, "Output shape must have 4 elements.");
+
+                const int strideY = layerParams.get<int>("stride_h", 1);
+                const int strideX = layerParams.get<int>("stride_w", 1);
+                const int outH = outShape.getIntValue(2);
+                const int outW = outShape.getIntValue(3);
+
+                if (layerParams.get<String>("pad_mode") == "SAME")
+                {
+                    layerParams.set("adj_w", (outW - 1) % strideX);
+                    layerParams.set("adj_h", (outH - 1) % strideY);
+                }
+                else if (layerParams.get<String>("pad_mode") == "VALID")
+                {
+                    if (!layerParams.has("kernel_h") || !layerParams.has("kernel_w"))
+                        CV_Error(Error::StsNotImplemented,
+                                 "Required attributes 'kernel_h' and 'kernel_w' are not present.");
+
+                    int kernelH = layerParams.get<int>("kernel_h");
+                    int kernelW = layerParams.get<int>("kernel_w");
+
+                    layerParams.set("adj_w", (outW - kernelW) % strideX);
+                    layerParams.set("adj_h", (outH - kernelH) % strideY);
+                }
+            }
         }
         else if (layer_type == "Transpose")
         {
@@ -638,14 +670,15 @@ void ONNXImporter::populateNet(Net dstNet)
                 Mat blob = getBlob(node_proto, constBlobs, 1);
                 CV_Assert(blob.type() == CV_32SC1);
 
-                if (layer_id.find(node_proto.input(0)) == layer_id.end()) {
-                    Mat input = getBlob(node_proto, constBlobs, 0);
-                    Mat out = input.reshape(0, static_cast<std::vector<int> >(blob));
-                    constBlobs.insert(std::make_pair(layerParams.name, out));
-                    continue;
-                }
                 layerParams.set("dim", DictValue::arrayInt<int*>(
                             blob.ptr<int>(), blob.total() ));
+
+                if (layer_id.find(node_proto.input(0)) == layer_id.end()) {
+                    std::vector<Mat> inputs(1, getBlob(node_proto, constBlobs, 0)), outputs;
+                    runLayer(layerParams, inputs, outputs);
+                    constBlobs.insert(std::make_pair(layerParams.name, outputs[0]));
+                    continue;
+                }
             }
             else {
                 DictValue shape = layerParams.get("shape");
@@ -718,8 +751,7 @@ void ONNXImporter::populateNet(Net dstNet)
                 {
                     inputs[i] = getBlob(node_proto, constBlobs, i);
                 }
-                Ptr<Layer> concat = ConcatLayer::create(layerParams);
-                runLayer(concat, inputs, concatenated);
+                runLayer(layerParams, inputs, concatenated);
 
                 CV_Assert(concatenated.size() == 1);
                 constBlobs.insert(std::make_pair(layerParams.name, concatenated[0]));

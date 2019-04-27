@@ -657,11 +657,17 @@ static int predictOutputDataLayout(const tensorflow::GraphDef& net,
 
 void TFImporter::populateNet(Net dstNet)
 {
+    if (!netTxt.ByteSize())
+        removePhaseSwitches(netBin);
+
     RemoveIdentityOps(netBin);
     RemoveIdentityOps(netTxt);
 
     if (!netTxt.ByteSize())
+    {
         simplifySubgraphs(netBin);
+        sortByExecutionOrder(netBin);
+    }
 
     std::set<String> layers_to_ignore;
 
@@ -939,7 +945,7 @@ void TFImporter::populateNet(Net dstNet)
             if (getDataLayout(name, data_layouts) == DATA_LAYOUT_UNKNOWN)
                 data_layouts[name] = DATA_LAYOUT_NHWC;
         }
-        else if (type == "BiasAdd" || type == "Add" || type == "Sub")
+        else if (type == "BiasAdd" || type == "Add" || type == "Sub" || type=="AddN")
         {
             bool haveConst = false;
             for(int ii = 0; !haveConst && ii < layer.input_size(); ++ii)
@@ -1119,18 +1125,25 @@ void TFImporter::populateNet(Net dstNet)
             {
                 CV_Assert(hasLayerAttr(layer, "squeeze_dims"));
                 const tensorflow::AttrValue& dims = getLayerAttr(layer, "squeeze_dims");
-                if (inpLayout == DATA_LAYOUT_NHWC)
+                std::vector<int> dimsVector(dims.list().i_size());
+                for (int i = 0; i < dimsVector.size(); ++i)
+                    dimsVector[i] = dims.list().i(i);
+
+                // Flatten layer can squeeze dimensions range into one.
+                std::sort(dimsVector.begin(), dimsVector.end());
+                for (int i = 1; i < dimsVector.size(); ++i)
                 {
-                    if (dims.list().i_size() != 2 || dims.list().i(0) != 1 || dims.list().i(1) != 2)
+                    if (dimsVector[i] != dimsVector[i - 1] + 1)
                         CV_Error(Error::StsNotImplemented, "Unsupported squeeze configuration");
                 }
-                else if (inpLayout == DATA_LAYOUT_NCHW)
+                int start = dimsVector.front() - 1, end = dimsVector.back();
+                if (start == -1 && end == 0)  // squeeze 0th dimension
                 {
-                    if (dims.list().i_size() != 2 || dims.list().i(0) != 2 || dims.list().i(1) != 3)
-                        CV_Error(Error::StsNotImplemented, "Unsupported squeeze configuration");
+                    start = 0;
+                    end = 1;
                 }
-                else
-                    CV_Error(Error::StsNotImplemented, "Unsupported squeeze configuration");
+                layerParams.set("axis", start);
+                layerParams.set("end_axis", end);
             }
             if (inpLayout == DATA_LAYOUT_NHWC)
             {
@@ -1503,8 +1516,8 @@ void TFImporter::populateNet(Net dstNet)
                 if (layerParams.blobs.size() == 2)
                     CV_Error(Error::StsNotImplemented, "Cannot determine number "
                              "of parameters for batch normalization layer.");
-                mean = Mat::zeros(1, layerParams.blobs[3].total(), CV_32F);
-                std = Mat::ones(1, layerParams.blobs[3].total(), CV_32F);
+                mean = Mat::zeros(1, layerParams.blobs[2].total(), CV_32F);
+                std = Mat::ones(1, layerParams.blobs[2].total(), CV_32F);
 
                 // Add an extra layer: Mean-Variance normalization
                 LayerParams mvnParams;
