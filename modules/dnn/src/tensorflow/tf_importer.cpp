@@ -109,7 +109,7 @@ void parseTensor(const tensorflow::TensorProto &tensor, Mat &dstBlob)
 
     dstBlob.create(shape, CV_32F);
 
-    Mat tensorContent = getTensorContent(tensor);
+    Mat tensorContent = getTensorContent(tensor, /*no copy*/false);
     int size = tensorContent.total();
     CV_Assert(size == (int)dstBlob.total());
 
@@ -509,7 +509,7 @@ void TFImporter::kernelFromTensor(const tensorflow::TensorProto &tensor, Mat &ds
 
     dstBlob.create(shape, CV_32F);
 
-    Mat tensorContent = getTensorContent(tensor);
+    Mat tensorContent = getTensorContent(tensor, /*no copy*/false);
     int size = tensorContent.total();
     CV_Assert(size == (int)dstBlob.total());
 
@@ -1417,6 +1417,43 @@ void TFImporter::populateNet(Net dstNet)
             }
             layerParams.set("begin", DictValue::arrayInt((int*)begins.data, begins.total()));
             layerParams.set("size", DictValue::arrayInt((int*)sizes.data, sizes.total()));
+
+            int id = dstNet.addLayer(name, "Slice", layerParams);
+            layer_id[name] = id;
+
+            connect(layer_id, dstNet, parsePin(layer.input(0)), id, 0);
+        }
+        else if (type == "StridedSlice")
+        {
+            CV_Assert(layer.input_size() == 4);
+            Mat begins = getTensorContent(getConstBlob(layer, value_id, 1));
+            Mat ends = getTensorContent(getConstBlob(layer, value_id, 2));
+            Mat strides = getTensorContent(getConstBlob(layer, value_id, 3));
+            CV_CheckTypeEQ(begins.type(), CV_32SC1, "");
+            CV_CheckTypeEQ(ends.type(), CV_32SC1, "");
+            CV_CheckTypeEQ(strides.type(), CV_32SC1, "");
+            const int num = begins.total();
+            CV_Assert_N(num == ends.total(), num == strides.total());
+
+            int end_mask = getLayerAttr(layer, "end_mask").i();
+            for (int i = 0; i < num; ++i)
+            {
+                if (end_mask & (1 << i))
+                    ends.at<int>(i) = -1;
+                if (strides.at<int>(i) != 1)
+                    CV_Error(Error::StsNotImplemented,
+                             format("StridedSlice with stride %d", strides.at<int>(i)));
+            }
+            if (begins.total() == 4 && getDataLayout(name, data_layouts) == DATA_LAYOUT_NHWC)
+            {
+                // Swap NHWC parameters' order to NCHW.
+                std::swap(begins.at<int>(2), begins.at<int>(3));
+                std::swap(begins.at<int>(1), begins.at<int>(2));
+                std::swap(ends.at<int>(2), ends.at<int>(3));
+                std::swap(ends.at<int>(1), ends.at<int>(2));
+            }
+            layerParams.set("begin", DictValue::arrayInt((int*)begins.data, begins.total()));
+            layerParams.set("end", DictValue::arrayInt((int*)ends.data, ends.total()));
 
             int id = dstNet.addLayer(name, "Slice", layerParams);
             layer_id[name] = id;

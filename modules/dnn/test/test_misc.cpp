@@ -343,13 +343,15 @@ TEST(Net, forwardAndRetrieve)
 }
 
 #ifdef HAVE_INF_ENGINE
+static const std::chrono::milliseconds async_timeout(500);
+
 // This test runs network in synchronous mode for different inputs and then
 // runs the same model asynchronously for the same inputs.
-typedef testing::TestWithParam<Target> Async;
+typedef testing::TestWithParam<tuple<int, Target> > Async;
 TEST_P(Async, set_and_forward_single)
 {
-    static const int kTimeout = 5000;  // in milliseconds.
-    const int target = GetParam();
+    const int dtype = get<0>(GetParam());
+    const int target = get<1>(GetParam());
 
     const std::string suffix = (target == DNN_TARGET_OPENCL_FP16 || target == DNN_TARGET_MYRIAD) ? "_fp16" : "";
     const std::string& model = findDataFile("dnn/layers/layer_convolution" + suffix + ".bin");
@@ -367,8 +369,8 @@ TEST_P(Async, set_and_forward_single)
     int blobSize[] = {2, 6, 75, 113};
     for (int i = 0; i < numInputs; ++i)
     {
-        inputs[i].create(4, &blobSize[0], CV_32FC1);
-        randu(inputs[i], 0.0f, 1.0f);
+        inputs[i].create(4, &blobSize[0], dtype);
+        randu(inputs[i], 0, 255);
     }
 
     // Run synchronously.
@@ -384,17 +386,18 @@ TEST_P(Async, set_and_forward_single)
     {
         netAsync.setInput(inputs[i]);
 
-        std::future<Mat> out = netAsync.forwardAsync();
-        if (out.wait_for(std::chrono::milliseconds(kTimeout)) == std::future_status::timeout)
-            CV_Error(Error::StsAssert, "Timeout");
-        normAssert(refs[i], out.get(), format("Index: %d", i).c_str(), 0, 0);
+        AsyncArray out = netAsync.forwardAsync();
+        ASSERT_TRUE(out.valid());
+        Mat result;
+        EXPECT_TRUE(out.get(result, async_timeout));
+        normAssert(refs[i], result, format("Index: %d", i).c_str(), 0, 0);
     }
 }
 
 TEST_P(Async, set_and_forward_all)
 {
-    static const int kTimeout = 5000;  // in milliseconds.
-    const int target = GetParam();
+    const int dtype = get<0>(GetParam());
+    const int target = get<1>(GetParam());
 
     const std::string suffix = (target == DNN_TARGET_OPENCL_FP16 || target == DNN_TARGET_MYRIAD) ? "_fp16" : "";
     const std::string& model = findDataFile("dnn/layers/layer_convolution" + suffix + ".bin");
@@ -413,8 +416,8 @@ TEST_P(Async, set_and_forward_all)
     int blobSize[] = {2, 6, 75, 113};
     for (int i = 0; i < numInputs; ++i)
     {
-        inputs[i].create(4, &blobSize[0], CV_32FC1);
-        randu(inputs[i], 0.0f, 1.0f);
+        inputs[i].create(4, &blobSize[0], dtype);
+        randu(inputs[i], 0, 255);
     }
 
     // Run synchronously.
@@ -426,7 +429,7 @@ TEST_P(Async, set_and_forward_all)
     }
 
     // Run asynchronously. To make test more robust, process inputs in the reversed order.
-    std::vector<std::future<Mat> > outs(numInputs);
+    std::vector<AsyncArray> outs(numInputs);
     for (int i = numInputs - 1; i >= 0; --i)
     {
         netAsync.setInput(inputs[i]);
@@ -435,13 +438,17 @@ TEST_P(Async, set_and_forward_all)
 
     for (int i = numInputs - 1; i >= 0; --i)
     {
-        if (outs[i].wait_for(std::chrono::milliseconds(kTimeout)) == std::future_status::timeout)
-            CV_Error(Error::StsAssert, "Timeout");
-        normAssert(refs[i], outs[i].get(), format("Index: %d", i).c_str(), 0, 0);
+        ASSERT_TRUE(outs[i].valid());
+        Mat result;
+        EXPECT_TRUE(outs[i].get(result, async_timeout));
+        normAssert(refs[i], result, format("Index: %d", i).c_str(), 0, 0);
     }
 }
 
-INSTANTIATE_TEST_CASE_P(/**/, Async, testing::ValuesIn(getAvailableTargets(DNN_BACKEND_INFERENCE_ENGINE)));
+INSTANTIATE_TEST_CASE_P(/**/, Async, Combine(
+  Values(CV_32F, CV_8U),
+  testing::ValuesIn(getAvailableTargets(DNN_BACKEND_INFERENCE_ENGINE))
+));
 #endif  // HAVE_INF_ENGINE
 
 }} // namespace
