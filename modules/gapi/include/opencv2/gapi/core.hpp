@@ -8,6 +8,8 @@
 #ifndef OPENCV_GAPI_CORE_HPP
 #define OPENCV_GAPI_CORE_HPP
 
+#include <math.h>
+
 #include <utility> // std::tuple
 
 #include <opencv2/imgproc.hpp>
@@ -392,8 +394,8 @@ namespace core {
             {
                 GAPI_Assert(fx != 0. && fy != 0.);
                 return in.withSize
-                    (Size(static_cast<int>(std::round(in.size.width  * fx)),
-                          static_cast<int>(std::round(in.size.height * fy))));
+                    (Size(static_cast<int>(round(in.size.width  * fx)),
+                          static_cast<int>(round(in.size.height * fy))));
             }
         }
     };
@@ -437,6 +439,12 @@ namespace core {
     G_TYPED_KERNEL(GCrop, <GMat(GMat, Rect)>, "org.opencv.core.transform.crop") {
         static GMatDesc outMeta(GMatDesc in, Rect rc) {
             return in.withSize(Size(rc.width, rc.height));
+        }
+    };
+
+    G_TYPED_KERNEL(GCopy, <GMat(GMat)>, "org.opencv.core.transform.copy") {
+        static GMatDesc outMeta(GMatDesc in) {
+            return in;
         }
     };
 
@@ -699,7 +707,7 @@ GAPI_EXPORTS GMat divRC(const GScalar& divident, const GMat& src, double scale, 
 /** @brief Applies a mask to a matrix.
 
 The function mask set value from given matrix if the corresponding pixel value in mask matrix set to true,
-and set the matrix value to 0 overwise.
+and set the matrix value to 0 otherwise.
 
 Supported src matrix data types are @ref CV_8UC1, @ref CV_16SC1, @ref CV_16UC1. Supported mask data type is @ref CV_8UC1.
 
@@ -1291,7 +1299,7 @@ depths.
  */
 GAPI_EXPORTS GMat threshold(const GMat& src, const GScalar& thresh, const GScalar& maxval, int depth);
 /** @overload
-This function appicable for all threshold depths except CV_THRESH_OTSU and CV_THRESH_TRIANGLE
+This function applicable for all threshold depths except CV_THRESH_OTSU and CV_THRESH_TRIANGLE
 @note Function textual ID is "org.opencv.core.matrixop.thresholdOT"
 */
 GAPI_EXPORTS std::tuple<GMat, GScalar> threshold(const GMat& src, const GScalar& maxval, int depth);
@@ -1496,6 +1504,19 @@ Output matrix must be of the same depth as input one, size is specified by given
 @sa resize
 */
 GAPI_EXPORTS GMat crop(const GMat& src, const Rect& rect);
+
+/** @brief Copies a 2D matrix.
+
+The function copies the matrix.
+
+Output matrix must be of the same size and depth as input one.
+
+@note Function textual ID is "org.opencv.core.transform.copy"
+
+@param src input matrix.
+@sa crop
+*/
+GAPI_EXPORTS GMat copy(const GMat& src);
 
 /** @brief Applies horizontal concatenation to given matrices.
 
