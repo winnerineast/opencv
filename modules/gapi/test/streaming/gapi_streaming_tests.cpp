@@ -154,7 +154,7 @@ TEST_P(GAPI_Streaming, SmokeTest_ConstInput_GMat)
         // With constant inputs, the stream is endless so
         // the blocking pull() should never return `false`.
         EXPECT_TRUE(ccomp.pull(cv::gout(out_mat_gapi)));
-        EXPECT_EQ(0, cv::countNonZero(out_mat_gapi != out_mat_ocv));
+        EXPECT_EQ(0, cvtest::norm(out_mat_gapi, out_mat_ocv, NORM_INF));
     }
 
     EXPECT_TRUE(ccomp.running());
@@ -202,7 +202,7 @@ TEST_P(GAPI_Streaming, SmokeTest_VideoInput_GMat)
         frames++;
         cv::Mat out_mat_ocv;
         opencv_ref(in_mat_gapi, out_mat_ocv);
-        EXPECT_EQ(0, cv::countNonZero(out_mat_gapi != out_mat_ocv));
+        EXPECT_EQ(0, cvtest::norm(out_mat_gapi, out_mat_ocv, NORM_INF));
     }
     EXPECT_LT(0u, frames);
     EXPECT_FALSE(ccomp.running());
@@ -814,6 +814,10 @@ struct GAPI_Streaming_Unit: public ::testing::Test {
         ref = cc.compile(a_desc, b_desc);
     }
 };
+
+// FIXME: (GAPI_Streaming_Types,   InputOpaque) test is missing here!
+// FIXME: (GAPI_Streaming_Types, XChangeOpaque) test is missing here!
+// FIXME: (GAPI_Streaming_Types,  OutputOpaque) test is missing here!
 
 TEST_F(GAPI_Streaming_Unit, TestTwoVideoSourcesFail)
 {

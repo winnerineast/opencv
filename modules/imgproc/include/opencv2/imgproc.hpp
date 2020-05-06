@@ -230,7 +230,7 @@ enum MorphTypes{
 enum MorphShapes {
     MORPH_RECT    = 0, //!< a rectangular structuring element:  \f[E_{ij}=1\f]
     MORPH_CROSS   = 1, //!< a cross-shaped structuring element:
-                       //!< \f[E_{ij} =  \fork{1}{if i=\texttt{anchor.y} or j=\texttt{anchor.x}}{0}{otherwise}\f]
+                       //!< \f[E_{ij} = \begin{cases} 1 & \texttt{if } {i=\texttt{anchor.y } {or } {j=\texttt{anchor.x}}} \\0 & \texttt{otherwise} \end{cases}\f]
     MORPH_ELLIPSE = 2 //!< an elliptic structuring element, that is, a filled ellipse inscribed
                       //!< into the rectangle Rect(0, 0, esize.width, 0.esize.height)
 };
@@ -473,7 +473,8 @@ enum HoughModes {
     /** multi-scale variant of the classical Hough transform. The lines are encoded the same way as
     HOUGH_STANDARD. */
     HOUGH_MULTI_SCALE   = 2,
-    HOUGH_GRADIENT      = 3 //!< basically *21HT*, described in @cite Yuen90
+    HOUGH_GRADIENT      = 3, //!< basically *21HT*, described in @cite Yuen90
+    HOUGH_GRADIENT_ALT  = 4, //!< variation of HOUGH_GRADIENT to get better accuracy
 };
 
 //! Variants of Line Segment %Detector
@@ -1494,7 +1495,7 @@ The function smooths an image using the kernel:
 
 where
 
-\f[\alpha = \fork{\frac{1}{\texttt{ksize.width*ksize.height}}}{when \texttt{normalize=true}}{1}{otherwise}\f]
+\f[\alpha = \begin{cases} \frac{1}{\texttt{ksize.width*ksize.height}} & \texttt{when } \texttt{normalize=true}  \\1 & \texttt{otherwise}\end{cases}\f]
 
 Unnormalized box filter is useful for computing various integral characteristics over each pixel
 neighborhood, such as covariance matrices of image derivatives (used in dense optical flow
@@ -1568,7 +1569,7 @@ according to the specified border mode.
 
 The function does actually compute correlation, not the convolution:
 
-\f[\texttt{dst} (x,y) =  \sum _{ \stackrel{0\leq x' < \texttt{kernel.cols},}{0\leq y' < \texttt{kernel.rows}} }  \texttt{kernel} (x',y')* \texttt{src} (x+x'- \texttt{anchor.x} ,y+y'- \texttt{anchor.y} )\f]
+\f[\texttt{dst} (x,y) =  \sum _{ \substack{0\leq x' < \texttt{kernel.cols}\\{0\leq y' < \texttt{kernel.rows}}}}  \texttt{kernel} (x',y')* \texttt{src} (x+x'- \texttt{anchor.x} ,y+y'- \texttt{anchor.y} )\f]
 
 That is, the kernel is not mirrored around the anchor point. If you need a real convolution, flip
 the kernel using #flip and set the new anchor to `(kernel.cols - anchor.x - 1, kernel.rows -
@@ -2096,28 +2097,37 @@ Example: :
 
 @note Usually the function detects the centers of circles well. However, it may fail to find correct
 radii. You can assist to the function by specifying the radius range ( minRadius and maxRadius ) if
-you know it. Or, you may set maxRadius to a negative number to return centers only without radius
-search, and find the correct radius using an additional procedure.
+you know it. Or, in the case of #HOUGH_GRADIENT method you may set maxRadius to a negative number
+to return centers only without radius search, and find the correct radius using an additional procedure.
+
+It also helps to smooth image a bit unless it's already soft. For example,
+GaussianBlur() with 7x7 kernel and 1.5x1.5 sigma or similar blurring may help.
 
 @param image 8-bit, single-channel, grayscale input image.
 @param circles Output vector of found circles. Each vector is encoded as  3 or 4 element
 floating-point vector \f$(x, y, radius)\f$ or \f$(x, y, radius, votes)\f$ .
-@param method Detection method, see #HoughModes. Currently, the only implemented method is #HOUGH_GRADIENT
+@param method Detection method, see #HoughModes. The available methods are #HOUGH_GRADIENT and #HOUGH_GRADIENT_ALT.
 @param dp Inverse ratio of the accumulator resolution to the image resolution. For example, if
 dp=1 , the accumulator has the same resolution as the input image. If dp=2 , the accumulator has
-half as big width and height.
+half as big width and height. For #HOUGH_GRADIENT_ALT the recommended value is dp=1.5,
+unless some small very circles need to be detected.
 @param minDist Minimum distance between the centers of the detected circles. If the parameter is
 too small, multiple neighbor circles may be falsely detected in addition to a true one. If it is
 too large, some circles may be missed.
-@param param1 First method-specific parameter. In case of #HOUGH_GRADIENT , it is the higher
-threshold of the two passed to the Canny edge detector (the lower one is twice smaller).
-@param param2 Second method-specific parameter. In case of #HOUGH_GRADIENT , it is the
+@param param1 First method-specific parameter. In case of #HOUGH_GRADIENT and #HOUGH_GRADIENT_ALT,
+it is the higher threshold of the two passed to the Canny edge detector (the lower one is twice smaller).
+Note that #HOUGH_GRADIENT_ALT uses #Scharr algorithm to compute image derivatives, so the threshold value
+shough normally be higher, such as 300 or normally exposed and contrasty images.
+@param param2 Second method-specific parameter. In case of #HOUGH_GRADIENT, it is the
 accumulator threshold for the circle centers at the detection stage. The smaller it is, the more
 false circles may be detected. Circles, corresponding to the larger accumulator values, will be
-returned first.
+returned first. In the case of #HOUGH_GRADIENT_ALT algorithm, this is the circle "perfectness" measure.
+The closer it to 1, the better shaped circles algorithm selects. In most cases 0.9 should be fine.
+If you want get better detection of small circles, you may decrease it to 0.85, 0.8 or even less.
+But then also try to limit the search range [minRadius, maxRadius] to avoid many false circles.
 @param minRadius Minimum circle radius.
-@param maxRadius Maximum circle radius. If <= 0, uses the maximum image dimension. If < 0, returns
-centers without finding the radius.
+@param maxRadius Maximum circle radius. If <= 0, uses the maximum image dimension. If < 0, #HOUGH_GRADIENT returns
+centers without finding the radius. #HOUGH_GRADIENT_ALT always computes circle radiuses.
 
 @sa fitEllipse, minEnclosingCircle
  */
@@ -4715,10 +4725,39 @@ public:
     the line is 8-connected or 4-connected
     If leftToRight=true, then the iteration is always done
     from the left-most point to the right most,
-    not to depend on the ordering of pt1 and pt2 parameters
+    not to depend on the ordering of pt1 and pt2 parameters;
     */
     LineIterator( const Mat& img, Point pt1, Point pt2,
-                  int connectivity = 8, bool leftToRight = false );
+                  int connectivity = 8, bool leftToRight = false )
+    {
+        init(&img, Rect(0, 0, img.cols, img.rows), pt1, pt2, connectivity, leftToRight);
+        ptmode = false;
+    }
+    LineIterator( Point pt1, Point pt2,
+                  int connectivity = 8, bool leftToRight = false )
+    {
+        init(0, Rect(std::min(pt1.x, pt2.x),
+                     std::min(pt1.y, pt2.y),
+                     std::max(pt1.x, pt2.x) - std::min(pt1.x, pt2.x) + 1,
+                     std::max(pt1.y, pt2.y) - std::min(pt1.y, pt2.y) + 1),
+             pt1, pt2, connectivity, leftToRight);
+        ptmode = true;
+    }
+    LineIterator( Size boundingAreaSize, Point pt1, Point pt2,
+                  int connectivity = 8, bool leftToRight = false )
+    {
+        init(0, Rect(0, 0, boundingAreaSize.width, boundingAreaSize.height),
+             pt1, pt2, connectivity, leftToRight);
+        ptmode = true;
+    }
+    LineIterator( Rect boundingAreaRect, Point pt1, Point pt2,
+                  int connectivity = 8, bool leftToRight = false )
+    {
+        init(0, boundingAreaRect, pt1, pt2, connectivity, leftToRight);
+        ptmode = true;
+    }
+    void init(const Mat* img, Rect boundingAreaRect, Point pt1, Point pt2, int connectivity, bool leftToRight);
+
     /** @brief returns pointer to the current pixel
     */
     uchar* operator *();
@@ -4738,6 +4777,9 @@ public:
     int err, count;
     int minusDelta, plusDelta;
     int minusStep, plusStep;
+    int minusShift, plusShift;
+    Point p;
+    bool ptmode;
 };
 
 //! @cond IGNORED
@@ -4747,7 +4789,7 @@ public:
 inline
 uchar* LineIterator::operator *()
 {
-    return ptr;
+    return ptmode ? 0 : ptr;
 }
 
 inline
@@ -4755,7 +4797,15 @@ LineIterator& LineIterator::operator ++()
 {
     int mask = err < 0 ? -1 : 0;
     err += minusDelta + (plusDelta & mask);
-    ptr += minusStep + (plusStep & mask);
+    if(!ptmode)
+    {
+        ptr += minusStep + (plusStep & mask);
+    }
+    else
+    {
+        p.x += minusShift + (plusShift & mask);
+        p.y += minusStep + (plusStep & mask);
+    }
     return *this;
 }
 
@@ -4770,9 +4820,13 @@ LineIterator LineIterator::operator ++(int)
 inline
 Point LineIterator::pos() const
 {
-    Point p;
-    p.y = (int)((ptr - ptr0)/step);
-    p.x = (int)(((ptr - ptr0) - p.y*step)/elemSize);
+    if(!ptmode)
+    {
+        size_t offset = (size_t)(ptr - ptr0);
+        int y = (int)(offset/step);
+        int x = (int)((offset - (size_t)y*step)/elemSize);
+        return Point(x, y);
+    }
     return p;
 }
 

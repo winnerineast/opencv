@@ -96,7 +96,7 @@ cv::gimpl::GOCLExecutable::GOCLExecutable(const ade::Graph &g,
             if (desc.storage == Data::Storage::INTERNAL && desc.shape == GShape::GMAT)
             {
                 const auto mat_desc = util::get<cv::GMatDesc>(desc.meta);
-                auto& mat = m_res.slot<cv::gapi::own::Mat>()[desc.rc];
+                auto& mat = m_res.slot<cv::Mat>()[desc.rc];
                 createMat(mat_desc, mat);
             }
             break;
@@ -129,7 +129,7 @@ cv::GArg cv::gimpl::GOCLExecutable::packArg(const GArg &arg)
     switch (ref.shape)
     {
     case GShape::GMAT:    return GArg(m_res.slot<cv::UMat>()[ref.id]);
-    case GShape::GSCALAR: return GArg(m_res.slot<cv::gapi::own::Scalar>()[ref.id]);
+    case GShape::GSCALAR: return GArg(m_res.slot<cv::Scalar>()[ref.id]);
     // Note: .at() is intentional for GArray as object MUST be already there
     //   (and constructed by either bindIn/Out or resetInternal)
     case GShape::GARRAY:  return GArg(m_res.slot<cv::detail::VectorRef>().at(ref.id));

@@ -10,7 +10,6 @@
 #include <functional> // multiplies
 
 #include <opencv2/gapi/gkernel.hpp>
-#include <opencv2/gapi/own/convert.hpp>
 
 #include "api/gbackend_priv.hpp"
 #include "backends/common/gbackend.hpp"
@@ -114,36 +113,22 @@ void bindInArg(Mag& mag, const RcDesc &rc, const GRunArg &arg, bool is_umat)
     {
         switch (arg.index())
         {
-        case GRunArg::index_of<cv::gapi::own::Mat>() :
+        case GRunArg::index_of<cv::Mat>() :
             if (is_umat)
             {
 #if !defined(GAPI_STANDALONE)
                 auto& mag_umat = mag.template slot<cv::UMat>()[rc.id];
-                mag_umat = to_ocv(util::get<cv::gapi::own::Mat>(arg)).getUMat(ACCESS_READ);
+                mag_umat = util::get<cv::Mat>(arg).getUMat(ACCESS_READ);
 #else
                 util::throw_error(std::logic_error("UMat is not supported in standalone build"));
 #endif // !defined(GAPI_STANDALONE)
             }
             else
             {
-                auto& mag_mat = mag.template slot<cv::gapi::own::Mat>()[rc.id];
-                mag_mat = util::get<cv::gapi::own::Mat>(arg);
+                auto& mag_mat = mag.template slot<cv::Mat>()[rc.id];
+                mag_mat = util::get<cv::Mat>(arg);
             }
             break;
-#if !defined(GAPI_STANDALONE)
-        case GRunArg::index_of<cv::Mat>() :
-            if (is_umat)
-            {
-                auto& mag_umat = mag.template slot<cv::UMat>()[rc.id];
-                mag_umat = util::get<cv::Mat>(arg).getUMat(ACCESS_READ);
-            }
-            else
-            {
-                auto& mag_mat = mag.template slot<cv::gapi::own::Mat>()[rc.id];
-                mag_mat = to_own(util::get<cv::Mat>(arg));
-            }
-            break;
-#endif //  !defined(GAPI_STANDALONE)
         default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
         break;
@@ -152,14 +137,11 @@ void bindInArg(Mag& mag, const RcDesc &rc, const GRunArg &arg, bool is_umat)
 
     case GShape::GSCALAR:
     {
-        auto& mag_scalar = mag.template slot<cv::gapi::own::Scalar>()[rc.id];
+        auto& mag_scalar = mag.template slot<cv::Scalar>()[rc.id];
         switch (arg.index())
         {
-            case GRunArg::index_of<cv::gapi::own::Scalar>() : mag_scalar = util::get<cv::gapi::own::Scalar>(arg); break;
-#if !defined(GAPI_STANDALONE)
-            case GRunArg::index_of<cv::Scalar>()            : mag_scalar = to_own(util::get<cv::Scalar>(arg));    break;
-#endif //  !defined(GAPI_STANDALONE)
-            default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
+        case GRunArg::index_of<cv::Scalar>() : mag_scalar = util::get<cv::Scalar>(arg);    break;
+        default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
         break;
     }
@@ -185,36 +167,22 @@ void bindOutArg(Mag& mag, const RcDesc &rc, const GRunArgP &arg, bool is_umat)
     {
         switch (arg.index())
         {
-        case GRunArgP::index_of<cv::gapi::own::Mat*>() :
+        case GRunArgP::index_of<cv::Mat*>() :
             if (is_umat)
             {
 #if !defined(GAPI_STANDALONE)
                 auto& mag_umat = mag.template slot<cv::UMat>()[rc.id];
-                mag_umat = to_ocv(*(util::get<cv::gapi::own::Mat*>(arg))).getUMat(ACCESS_RW);
+                mag_umat = util::get<cv::Mat*>(arg)->getUMat(ACCESS_RW);
 #else
                 util::throw_error(std::logic_error("UMat is not supported in standalone build"));
 #endif // !defined(GAPI_STANDALONE)
             }
             else
             {
-                auto& mag_mat = mag.template slot<cv::gapi::own::Mat>()[rc.id];
-                mag_mat = *util::get<cv::gapi::own::Mat*>(arg);
+                auto& mag_mat = mag.template slot<cv::Mat>()[rc.id];
+                mag_mat = *util::get<cv::Mat*>(arg);
             }
             break;
-#if !defined(GAPI_STANDALONE)
-        case GRunArgP::index_of<cv::Mat*>() :
-            if (is_umat)
-            {
-                auto& mag_umat = mag.template slot<cv::UMat>()[rc.id];
-                mag_umat = util::get<cv::Mat*>(arg)->getUMat(ACCESS_RW);
-            }
-            else
-            {
-                auto& mag_mat = mag.template slot<cv::gapi::own::Mat>()[rc.id];
-                mag_mat = to_own(*util::get<cv::Mat*>(arg));
-            }
-            break;
-#endif //  !defined(GAPI_STANDALONE)
         default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
         break;
@@ -222,14 +190,11 @@ void bindOutArg(Mag& mag, const RcDesc &rc, const GRunArgP &arg, bool is_umat)
 
     case GShape::GSCALAR:
     {
-        auto& mag_scalar = mag.template slot<cv::gapi::own::Scalar>()[rc.id];
+        auto& mag_scalar = mag.template slot<cv::Scalar>()[rc.id];
         switch (arg.index())
         {
-            case GRunArgP::index_of<cv::gapi::own::Scalar*>() : mag_scalar = *util::get<cv::gapi::own::Scalar*>(arg); break;
-#if !defined(GAPI_STANDALONE)
-            case GRunArgP::index_of<cv::Scalar*>()            : mag_scalar = to_own(*util::get<cv::Scalar*>(arg)); break;
-#endif //  !defined(GAPI_STANDALONE)
-            default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
+        case GRunArgP::index_of<cv::Scalar*>() : mag_scalar = *util::get<cv::Scalar*>(arg); break;
+        default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
         break;
     }
@@ -265,7 +230,7 @@ void resetInternalData(Mag& mag, const Data &d)
         break;
 
     case GShape::GSCALAR:
-        mag.template slot<cv::gapi::own::Scalar>()[d.rc] = cv::gapi::own::Scalar();
+        mag.template slot<cv::Scalar>()[d.rc] = cv::Scalar();
         break;
 
     case GShape::GMAT:
@@ -283,8 +248,8 @@ cv::GRunArg getArg(const Mag& mag, const RcDesc &ref)
     // Wrap associated CPU object (either host or an internal one)
     switch (ref.shape)
     {
-    case GShape::GMAT:    return GRunArg(mag.template slot<cv::gapi::own::Mat>().at(ref.id));
-    case GShape::GSCALAR: return GRunArg(mag.template slot<cv::gapi::own::Scalar>().at(ref.id));
+    case GShape::GMAT:    return GRunArg(mag.template slot<cv::Mat>().at(ref.id));
+    case GShape::GSCALAR: return GRunArg(mag.template slot<cv::Scalar>().at(ref.id));
     // Note: .at() is intentional for GArray and GOpaque as objects MUST be already there
     //   (and constructed by either bindIn/Out or resetInternal)
     case GShape::GARRAY:  return GRunArg(mag.template slot<cv::detail::VectorRef>().at(ref.id));
@@ -309,8 +274,8 @@ cv::GRunArgP getObjPtr(Mag& mag, const RcDesc &rc, bool is_umat)
 #endif //  !defined(GAPI_STANDALONE)
         }
         else
-            return GRunArgP(&mag.template slot<cv::gapi::own::Mat>()[rc.id]);
-    case GShape::GSCALAR: return GRunArgP(&mag.template slot<cv::gapi::own::Scalar>()[rc.id]);
+            return GRunArgP(&mag.template slot<cv::Mat>()[rc.id]);
+    case GShape::GSCALAR: return GRunArgP(&mag.template slot<cv::Scalar>()[rc.id]);
     // Note: .at() is intentional for GArray and GOpaque as objects MUST be already there
     //   (and constructor by either bindIn/Out or resetInternal)
     case GShape::GARRAY:
@@ -353,10 +318,9 @@ void writeBack(const Mag& mag, const RcDesc &rc, GRunArgP &g_arg, bool is_umat)
         uchar* out_arg_data = nullptr;
         switch (g_arg.index())
         {
-            case GRunArgP::index_of<cv::gapi::own::Mat*>() : out_arg_data = util::get<cv::gapi::own::Mat*>(g_arg)->data; break;
+            case GRunArgP::index_of<cv::Mat*>() : out_arg_data = util::get<cv::Mat*>(g_arg)->data; break;
 #if !defined(GAPI_STANDALONE)
-            case GRunArgP::index_of<cv::Mat*>()            : out_arg_data = util::get<cv::Mat*>(g_arg)->data; break;
-            case GRunArgP::index_of<cv::UMat*>()           : out_arg_data = (util::get<cv::UMat*>(g_arg))->getMat(ACCESS_RW).data; break;
+            case GRunArgP::index_of<cv::UMat*>() : out_arg_data = (util::get<cv::UMat*>(g_arg))->getMat(ACCESS_RW).data; break;
 #endif //  !defined(GAPI_STANDALONE)
             default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
@@ -371,7 +335,7 @@ void writeBack(const Mag& mag, const RcDesc &rc, GRunArgP &g_arg, bool is_umat)
         }
         else
         {
-            auto& in_mag = mag.template slot<cv::gapi::own::Mat>().at(rc.id);
+            auto& in_mag = mag.template slot<cv::Mat>().at(rc.id);
             GAPI_Assert((out_arg_data == in_mag.data) && " data for output parameters was reallocated ?");
         }
         break;
@@ -381,11 +345,8 @@ void writeBack(const Mag& mag, const RcDesc &rc, GRunArgP &g_arg, bool is_umat)
     {
         switch (g_arg.index())
         {
-            case GRunArgP::index_of<cv::gapi::own::Scalar*>() : *util::get<cv::gapi::own::Scalar*>(g_arg) = mag.template slot<cv::gapi::own::Scalar>().at(rc.id); break;
-#if !defined(GAPI_STANDALONE)
-            case GRunArgP::index_of<cv::Scalar*>()            : *util::get<cv::Scalar*>(g_arg) = cv::gapi::own::to_ocv(mag.template slot<cv::gapi::own::Scalar>().at(rc.id)); break;
-#endif //  !defined(GAPI_STANDALONE)
-            default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
+        case GRunArgP::index_of<cv::Scalar*>() : *util::get<cv::Scalar*>(g_arg) = mag.template slot<cv::Scalar>().at(rc.id); break;
+        default: util::throw_error(std::logic_error("content type of the runtime argument does not match to resource description ?"));
         }
         break;
     }
@@ -398,13 +359,13 @@ void writeBack(const Mag& mag, const RcDesc &rc, GRunArgP &g_arg, bool is_umat)
 
 } // namespace magazine
 
-void createMat(const cv::GMatDesc &desc, cv::gapi::own::Mat& mat)
+void createMat(const cv::GMatDesc &desc, cv::Mat& mat)
 {
     // FIXME: Refactor (probably start supporting N-Dimensional blobs natively
     if (desc.dims.empty())
     {
         const auto type = desc.planar ? desc.depth : CV_MAKETYPE(desc.depth, desc.chan);
-        const auto size = desc.planar ? cv::gapi::own::Size{desc.size.width, desc.size.height*desc.chan}
+        const auto size = desc.planar ? cv::Size{desc.size.width, desc.size.height*desc.chan}
                                       : desc.size;
         mat.create(size, type);
     }
@@ -414,25 +375,6 @@ void createMat(const cv::GMatDesc &desc, cv::gapi::own::Mat& mat)
         mat.create(desc.dims, desc.depth);
     }
 }
-
-#if !defined(GAPI_STANDALONE)
-void createMat(const cv::GMatDesc &desc, cv::Mat& mat)
-{
-    // FIXME: Refactor (probably start supporting N-Dimensional blobs natively
-    if (desc.dims.empty())
-    {
-        const auto type = desc.planar ? desc.depth : CV_MAKETYPE(desc.depth, desc.chan);
-        const auto size = desc.planar ? cv::Size{desc.size.width, desc.size.height*desc.chan}
-                                      : cv::gapi::own::to_ocv(desc.size);
-        mat.create(size, type);
-    }
-    else
-    {
-        GAPI_Assert(!desc.planar);
-        mat.create(desc.dims, desc.depth);
-    }
-}
-#endif
 
 } // namespace gimpl
 } // namespace cv

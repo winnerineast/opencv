@@ -12,7 +12,15 @@
 
 #ifdef HAVE_DNN_NGRAPH
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4245)
+#pragma warning(disable : 4268)
+#endif
 #include <ngraph/ngraph.hpp>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif  // HAVE_DNN_NGRAPH
 
@@ -44,6 +52,8 @@ public:
 
     void createNet(Target targetId);
     void setNodePtr(std::shared_ptr<ngraph::Node>* ptr);
+
+    void reset();
 private:
     void release();
     int getNumComponents();
@@ -82,6 +92,10 @@ private:
 class InfEngineNgraphNode : public BackendNode
 {
 public:
+    InfEngineNgraphNode(const std::vector<Ptr<BackendNode> >& nodes, Ptr<Layer>& layer,
+                        std::vector<Mat*>& inputs, std::vector<Mat>& outputs,
+                        std::vector<Mat>& internals);
+
     InfEngineNgraphNode(std::shared_ptr<ngraph::Node>&& _node);
     InfEngineNgraphNode(std::shared_ptr<ngraph::Node>& _node);
 
@@ -90,6 +104,7 @@ public:
     // Inference Engine network object that allows to obtain the outputs of this layer.
     std::shared_ptr<ngraph::Node> node;
     Ptr<InfEngineNgraphNet> net;
+    Ptr<dnn::Layer> cvLayer;
 };
 
 class NgraphBackendWrapper : public BackendWrapper

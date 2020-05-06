@@ -51,6 +51,8 @@
 #undef max
 #include <iostream>
 #include <fstream>
+#include <cerrno>
+#include <opencv2/core/utils/logger.hpp>
 #include <opencv2/core/utils/configuration.private.hpp>
 
 
@@ -175,6 +177,10 @@ struct ImageCodecInitializer
     #ifdef HAVE_JASPER
         decoders.push_back( makePtr<Jpeg2KDecoder>() );
         encoders.push_back( makePtr<Jpeg2KEncoder>() );
+    #endif
+    #ifdef HAVE_OPENJPEG
+        decoders.push_back( makePtr<Jpeg2KOpjDecoder>() );
+        encoders.push_back( makePtr<Jpeg2KOpjEncoder>() );
     #endif
     #ifdef HAVE_OPENEXR
         decoders.push_back( makePtr<ExrDecoder>() );
@@ -693,6 +699,23 @@ static bool imwrite_( const String& filename, const std::vector<Mat>& img_vec,
             code = encoder->write( write_vec[0], params );
         else
             code = encoder->writemulti( write_vec, params ); //to be implemented
+
+        if (!code)
+        {
+            FILE* f = fopen( filename.c_str(), "wb" );
+            if ( !f )
+            {
+                if (errno == EACCES)
+                {
+                    CV_LOG_WARNING(NULL, "imwrite_('" << filename << "'): can't open file for writing: permission denied");
+                }
+            }
+            else
+            {
+                fclose(f);
+                remove(filename.c_str());
+            }
+        }
     }
     catch (const cv::Exception& e)
     {

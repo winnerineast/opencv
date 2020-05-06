@@ -32,7 +32,7 @@ static bool checkQRInputImage(InputArray img, Mat& gray)
         return false;  // image data is not enough for providing reliable results
     }
     int incn = img.channels();
-    CV_Check(incn, incn == 1 || incn == 3 || incn == 3, "");
+    CV_Check(incn, incn == 1 || incn == 3 || incn == 4, "");
     if (incn == 3 || incn == 4)
     {
         cvtColor(img, gray, COLOR_BGR2GRAY);
@@ -122,9 +122,16 @@ void QRDetect::init(const Mat& src, double eps_vertical_, double eps_horizontal_
 
     eps_vertical   = eps_vertical_;
     eps_horizontal = eps_horizontal_;
-    adaptiveThreshold(barcode, bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
-    adaptiveThreshold(resized_barcode, resized_bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
 
+    if (!barcode.empty())
+        adaptiveThreshold(barcode, bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
+    else
+        bin_barcode.release();
+
+    if (!resized_barcode.empty())
+        adaptiveThreshold(resized_barcode, resized_bin_barcode, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 83, 2);
+    else
+        resized_bin_barcode.release();
 }
 
 vector<Vec3d> QRDetect::searchHorizontalLines()
@@ -1297,7 +1304,7 @@ protected:
     {
     public:
         ParallelSearch(vector< vector< Point2f > >& true_points_group_,
-                vector< vector< Point2f > >& loc_, int iter_, int* end_,
+                vector< vector< Point2f > >& loc_, int iter_, vector<int>& end_,
                 vector< vector< Vec3i > >& all_points_,
                 QRDetectMulti& cl_)
         :
@@ -1313,7 +1320,7 @@ protected:
         vector< vector< Point2f > >& true_points_group;
         vector< vector< Point2f > >& loc;
         int iter;
-        int* end;
+        vector<int>& end;
         vector< vector< Vec3i > >& all_points;
         QRDetectMulti& cl;
     };
@@ -1593,6 +1600,8 @@ bool QRDetectMulti::checkPoints(const vector<Point2f>& quadrangle_points)
             li2++;
         }
     }
+    if (count_w == 0)
+        return false;
 
     double frac = double(count_b) / double(count_w);
     double bottom_bound = 0.76;
@@ -1925,11 +1934,12 @@ bool QRDetectMulti::checkSets(vector<vector<Point2f> >& true_points_group, vecto
         return false;
 
 
-    int* set_size = new int[true_points_group.size()];
+    vector<int> set_size(true_points_group.size());
     for (size_t i = 0; i < true_points_group.size(); i++)
     {
-        set_size[i] = int(0.5 * (true_points_group[i].size() - 2 ) * (true_points_group[i].size() - 1));
+        set_size[i] = int( (true_points_group[i].size() - 2 ) * (true_points_group[i].size() - 1) * true_points_group[i].size()) / 6;
     }
+
     vector< vector< Vec3i > > all_points(true_points_group.size());
     for (size_t i = 0; i < true_points_group.size(); i++)
         all_points[i].resize(set_size[i]);
@@ -1937,14 +1947,15 @@ bool QRDetectMulti::checkSets(vector<vector<Point2f> >& true_points_group, vecto
     for (size_t i = 0; i < true_points_group.size(); i++)
     {
         cur_cluster = 0;
-        for (size_t j = 1; j < true_points_group[i].size() - 1; j++)
-            for (size_t k = j + 1; k < true_points_group[i].size(); k++)
-            {
-                all_points[i][cur_cluster][0] = 0;
-                all_points[i][cur_cluster][1] = int(j);
-                all_points[i][cur_cluster][2] = int(k);
-                cur_cluster++;
-            }
+        for (size_t l = 0; l < true_points_group[i].size() - 2; l++)
+            for (size_t j = l + 1; j < true_points_group[i].size() - 1; j++)
+                for (size_t k = j + 1; k < true_points_group[i].size(); k++)
+                {
+                    all_points[i][cur_cluster][0] = int(l);
+                    all_points[i][cur_cluster][1] = int(j);
+                    all_points[i][cur_cluster][2] = int(k);
+                    cur_cluster++;
+                }
     }
 
     for (size_t i = 0; i < true_points_group.size(); i++)
@@ -1963,7 +1974,7 @@ bool QRDetectMulti::checkSets(vector<vector<Point2f> >& true_points_group, vecto
     transformation_points.resize(iter + true_points_group.size());
 
     true_points_group_copy = true_points_group;
-    int* end = new int[true_points_group.size()];
+    vector<int> end(true_points_group.size());
     for (size_t i = 0; i < true_points_group.size(); i++)
         end[i] = iter + set_size[i];
     ParallelSearch parallelSearch(true_points_group,

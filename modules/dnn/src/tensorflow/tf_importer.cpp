@@ -458,6 +458,7 @@ private:
     tensorflow::GraphDef netTxt;
 
     std::vector<String> netInputsNames;
+    std::vector<MatShape> netInputShapes;
 };
 
 TFImporter::TFImporter(const char *model, const char *config)
@@ -1230,6 +1231,7 @@ void TFImporter::populateNet(Net dstNet)
                 // Only NHWC <-> NCHW permutations are allowed. OpenCV is always
                 // keep NCHW layout this way.
                 int inpLayout = getDataLayout(layer.input(0), data_layouts);
+                std::string type = "Identity";
                 if (inpLayout == DATA_LAYOUT_NHWC)
                 {
                     if (permData[0] == 0 && permData[1] == 3 && permData[2] == 1 && permData[3] == 2)
@@ -1243,6 +1245,15 @@ void TFImporter::populateNet(Net dstNet)
                         // in TensorFlow: NHWC->NHWC
                         // in OpenCV: NCHW->NCHW
                         data_layouts[name] = DATA_LAYOUT_NHWC;
+                    }
+                    else if (permData[0] == 0 && permData[1] == 3 && permData[2] == 2 && permData[3] == 1)
+                    {
+                        // in TensorFlow: NHWC->NCWH
+                        // in OpenCV: NCHW->NCWH
+                        int permData[] = {0, 1, 3, 2};
+                        layerParams.set("order", DictValue::arrayInt<int*>(permData, perm.total()));
+                        data_layouts[name] = DATA_LAYOUT_NCHW;  // we keep track NCHW because channels position only matters
+                        type = "Permute";
                     }
                     else
                         CV_Error(Error::StsParseError, "Only NHWC <-> NCHW permutations are allowed.");
@@ -1264,7 +1275,7 @@ void TFImporter::populateNet(Net dstNet)
                     else
                         CV_Error(Error::StsParseError, "Only NHWC <-> NCHW permutations are allowed.");
                 }
-                int id = dstNet.addLayer(name, "Identity", layerParams);
+                int id = dstNet.addLayer(name, type, layerParams);
                 layer_id[name] = id;
                 connect(layer_id, dstNet, parsePin(layer.input(0)), id, 0);
             }
@@ -1401,6 +1412,35 @@ void TFImporter::populateNet(Net dstNet)
                 netInputsNames.push_back(name);
                 layer_id[name] = 0;
             }
+            tensorflow::TensorShapeProto shape;
+            if (hasLayerAttr(layer, "shape"))
+                shape = getLayerAttr(layer, "shape").shape();
+            else if (hasLayerAttr(layer, "_output_shapes"))
+            {
+                tensorflow::AttrValue_ListValue list = getLayerAttr(layer, "_output_shapes").list();
+                if (list.shape_size())
+                    shape = list.shape()[0];
+            }
+            if (shape.dim_size())
+            {
+                MatShape dims(shape.dim_size());
+                for (int i = 0; i < dims.size(); ++i)
+                    dims[i] = shape.dim(i).size();
+                if (dims.size() == 4 && predictedLayout == DATA_LAYOUT_NHWC)
+                {
+                    std::swap(dims[1], dims[3]);  // NHWC->NCWH
+                    std::swap(dims[2], dims[3]);  // NCWH->NCHW
+                    if (dims[0] == -1)  // It's OK to have undetermined batch size
+                        dims[0] = 1;
+                }
+                bool hasNeg = false;
+                for (int i = 0; i < dims.size() && !hasNeg; ++i)
+                {
+                    hasNeg = dims[i] < 0;
+                }
+                if (!hasNeg)
+                    netInputShapes.push_back(dims);
+            }
         }
         else if (type == "Split") {
             // TODO: determining axis index remapping by input dimensions order of input blob
@@ -1468,6 +1508,8 @@ void TFImporter::populateNet(Net dstNet)
             int end_mask = getLayerAttr(layer, "end_mask").i();
             for (int i = 0; i < num; ++i)
             {
+                if (ends.at<int>(i) < 0)
+                    ends.at<int>(i) -= 1;
                 if (end_mask & (1 << i))
                     ends.at<int>(i) = -1;
                 if (strides.at<int>(i) != 1)
@@ -1578,8 +1620,41 @@ void TFImporter::populateNet(Net dstNet)
             }
             else
             {
-                layerParams.set("operation", "prod");
-                int id = dstNet.addLayer(name, "Eltwise", layerParams);
+                // Check if all the inputs have the same shape.
+                bool equalInpShapes = true;
+                MatShape outShape0;
+                for (int ii = 0; ii < layer.input_size() && !netInputShapes.empty(); ii++)
+                {
+                    Pin pin = parsePin(layer.input(ii));
+                    int inpId = layer_id.find(pin.name)->second;
+
+                    // Get input shape
+                    MatShape outShape;
+                    std::vector<MatShape> inpShapes, outShapes;
+                    dstNet.getLayerShapes(netInputShapes, inpId, inpShapes, outShapes);
+                    CV_CheckGT(static_cast<int>(outShapes.size()), pin.blobIndex, "");
+                    outShape = outShapes[pin.blobIndex];
+
+                    if (ii == 0)
+                    {
+                        outShape0 = outShape;
+                    }
+                    else if (outShape != outShape0)
+                    {
+                        equalInpShapes = false;
+                        break;
+                    }
+                }
+
+                int id;
+                if (equalInpShapes || netInputShapes.empty())
+                {
+                    layerParams.set("operation", "prod");
+                    id = dstNet.addLayer(name, "Eltwise", layerParams);
+                }
+                else
+                    id = dstNet.addLayer(name, "Scale", layerParams);
+
                 layer_id[name] = id;
 
                 for (int ii = 0; ii < layer.input_size(); ii++)
@@ -1811,8 +1886,31 @@ void TFImporter::populateNet(Net dstNet)
             connect(layer_id, dstNet, parsePin(layer.input(1)), id, 0);
             data_layouts[name] = DATA_LAYOUT_UNKNOWN;
         }
-        else if (type == "ResizeNearestNeighbor" || type == "ResizeBilinear")
+        else if (type == "ResizeNearestNeighbor" || type == "ResizeBilinear" || type == "FusedResizeAndPadConv2D")
         {
+            std::string convWeights = "";
+            if (type == "FusedResizeAndPadConv2D")
+            {
+                // input: "mul_1"
+                // input: "decoder/ResizeBilinear/size"
+                // input: "decoder/decoder_conv0/Conv2D_dummy_paddings"
+                // input: "decoder/decoder_conv0/weights"
+                CV_CheckEQ(layer.input_size(), 4, "Number of input for FusedResizeAndPadConv2D");
+
+                Mat paddings = getTensorContent(getConstBlob(layer, value_id, 2));
+                CV_CheckEQ(countNonZero(paddings), 0, "Unsupported mode");
+
+                convWeights = layer.input(3);
+                layer.mutable_input()->DeleteSubrange(2, 2);
+                name = name + "/resize";
+
+                if (hasLayerAttr(layer, "resize_align_corners"))
+                {
+                    layer.mutable_attr()->insert(
+                        ::google::protobuf::MapPair<std::string, tensorflow::AttrValue>("align_corners",
+                                                                                        getLayerAttr(layer, "resize_align_corners")));
+                }
+            }
             if (layer.input_size() == 2)
             {
                 Mat outSize = getTensorContent(getConstBlob(layer, value_id, 1));
@@ -1844,6 +1942,17 @@ void TFImporter::populateNet(Net dstNet)
             layer_id[name] = id;
 
             connect(layer_id, dstNet, parsePin(layer.input(0)), id, 0);
+
+            // Step back to add convolution
+            if (type == "FusedResizeAndPadConv2D")
+            {
+                tensorflow::NodeDef* conv = net.mutable_node(li);
+                conv->clear_input();
+                conv->add_input(name);
+                conv->add_input(convWeights);
+                conv->set_op("Conv2D");
+                li -= 1;
+            }
         }
         else if (type == "L2Normalize")
         {
